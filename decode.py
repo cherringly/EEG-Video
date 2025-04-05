@@ -1,0 +1,64 @@
+from datetime import datetime
+import numpy as np
+
+
+def fn_BionodeBinOpen(packedFileDir: str, ADCres: int, sampR: int) -> dict:
+    unpackedFile = {}
+
+    try:
+        with open(packedFileDir, 'rb') as f:
+            rawData = np.frombuffer(f.read(), dtype=np.uint8)
+    except FileNotFoundError:
+        raise FileNotFoundError("File could not be opened. Check the path or permissions.")
+
+    # Read header
+    year = (rawData[0] << 8) + rawData[1]
+    month = rawData[2]
+    day = rawData[3]
+    hour = rawData[4]
+    minute = rawData[5]
+    second = rawData[6]
+    sampleRate = (rawData[7] << 8) + rawData[8]
+    numChannels = rawData[9]
+
+    unpackedFile['Date'] = datetime(year, month, day, hour, minute, second)
+    unpackedFile['sampleRate'] = sampleRate
+    unpackedFile['numChannels'] = numChannels
+
+    bytesPerSample = ADCres // 8
+    packet_size = 58
+    packetNum = len(rawData) // packet_size
+    channelsData = np.zeros((numChannels, 13 * packetNum), dtype=int)
+
+    print("Unpacking Data from file... ")
+
+    for i in range(1, packetNum):
+        tempPacket = rawData[(packet_size * i):(packet_size * (i + 1))]
+        X = tempPacket[7:-11]  # 8:end-11 in 0-based indexing
+
+        yarr = [
+            (X[3*j] << 16) | (X[3*j + 1] << 8) | X[3*j + 2]
+            for j in range(len(X) // 3)
+        ]
+
+        zarr = []
+        for y in yarr:
+            z1 = (y & 0xFFF000) >> 12
+            z2 = y & 0x000FFF
+            zarr.extend([z1, z2])
+
+        for idx, val in enumerate(zarr):
+            channel = (idx % numChannels)
+            pos = (13 * (i - 1)) + (idx // numChannels)
+            if pos < channelsData.shape[1]:
+                channelsData[channel, pos] = val
+
+        if i % max(1, packetNum // 20) == 0:
+            print(f"Progress: {int((i / packetNum) * 100)}%")
+
+    print("Unpacking Completed!")
+
+    unpackedFile['channelsData'] = channelsData
+    unpackedFile['time'] = np.arange(0, channelsData.shape[1]) / sampR
+
+    return unpackedFile
