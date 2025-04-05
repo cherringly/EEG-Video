@@ -2,12 +2,16 @@ import cv2
 from gaze_tracking import GazeTracking
 import os
 
+
 def detect_blinks_from_video(video_path):
     if not os.path.exists(video_path):
         raise FileNotFoundError(f"Video file '{video_path}' does not exist.")
 
     gaze = GazeTracking()
     video = cv2.VideoCapture(video_path)
+    
+    fps = video.get(cv2.CAP_PROP_FPS)
+    frame_delay = int(1000 / fps) if fps > 0 else 33
 
     if not video.isOpened():
         raise RuntimeError("Failed to open video file.")
@@ -17,31 +21,34 @@ def detect_blinks_from_video(video_path):
     while True:
         ret, frame = video.read()
         if not ret:
-            break  # End of video
+            break
 
+        # Process the frame with GazeTracking
         gaze.refresh(frame)
-        annotated_frame = gaze.annotated_frame()
+        frame = gaze.annotated_frame()
 
-        text = ""
         if gaze.is_blinking():
-            text = "Blinking"
-        elif gaze.is_right():
-            text = "Looking right"
-        elif gaze.is_left():
-            text = "Looking left"
-        elif gaze.is_center():
-            text = "Looking center"
+            label_eeg = "EEG"
+            label_emg = "EMG X"
+            cv2.putText(frame, label_eeg, (90, 80), cv2.FONT_HERSHEY_DUPLEX, 3.2, (0,0,0), 2)
+            cv2.putText(frame, label_emg, (90, 170), cv2.FONT_HERSHEY_DUPLEX, 3.2, (255, 0, 0), 2)
+        else:
+            label_eeg = "EEG X"
+            label_emg = "EMG"
+            cv2.putText(frame, label_eeg, (90, 80), cv2.FONT_HERSHEY_DUPLEX, 3.2, (255, 0, 0), 2)
+            cv2.putText(frame, label_emg, (90, 170), cv2.FONT_HERSHEY_DUPLEX, 3.2, (0,0, 0), 2)
+            
+        
 
-        cv2.putText(annotated_frame, text, (90, 60), cv2.FONT_HERSHEY_DUPLEX, 1.6, (147, 58, 31), 2)
+        # Overlay the label on the frame
+        # cv2.putText(frame, label_eeg, (90, 80), cv2.FONT_HERSHEY_DUPLEX, 3.2, (255, 49, 49), 2)
+        # cv2.putText(frame, label_emg, (90, 170), cv2.FONT_HERSHEY_DUPLEX, 3.2, (170, 255, 0), 2)
 
-        left_pupil = gaze.pupil_left_coords()
-        right_pupil = gaze.pupil_right_coords()
-        cv2.putText(annotated_frame, "Left pupil:  " + str(left_pupil), (90, 130), cv2.FONT_HERSHEY_DUPLEX, 0.9, (147, 58, 31), 1)
-        cv2.putText(annotated_frame, "Right pupil: " + str(right_pupil), (90, 165), cv2.FONT_HERSHEY_DUPLEX, 0.9, (147, 58, 31), 1)
+        # Display the frame
+        cv2.imshow("Blink Detection", frame)
 
-        cv2.imshow("Blink Detection", annotated_frame)
-
-        if cv2.waitKey(1) == 27:  # ESC key to stop
+        # Exit when ESC key is pressed
+        if cv2.waitKey(frame_delay) & 0xFF == 27:
             break
 
     video.release()
@@ -49,6 +56,5 @@ def detect_blinks_from_video(video_path):
     print("\nBlink analysis complete.")
 
 if __name__ == "__main__":
-    # Replace with your actual video path or accept via input/argparse
-    test_video_path = "example.mov"
+    test_video_path = "3.31.25_1.mov"
     detect_blinks_from_video(test_video_path)
