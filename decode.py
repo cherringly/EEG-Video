@@ -62,3 +62,30 @@ def fn_BionodeBinOpen(packedFileDir: str, ADCres: int, sampR: int) -> dict:
     unpackedFile['time'] = np.arange(0, channelsData.shape[1]) / sampR
 
     return unpackedFile
+
+def main():
+    # Input parameters
+    packedFileDir = "ear3.31.25_1.bin"
+    ADCres = 24       # ADC resolution (e.g., 24 bits)
+    sampR = 1000      # Sampling rate in Hz (update as needed)
+
+    # Load and unpack data
+    unpacked = fn_BionodeBinOpen(packedFileDir, ADCres, sampR)
+
+    print("\n--- File Info ---")
+    print("Date:", unpacked["Date"])
+    print("Sample Rate:", unpacked["sampleRate"])
+    print("Channels:", unpacked["numChannels"])
+    print("Shape:", unpacked["channelsData"].shape)
+
+    # Optional: Plot a quick preview
+    import matplotlib.pyplot as plt
+    plt.plot(unpacked["time"], unpacked["channelsData"][0])
+    plt.title("Channel 0 Preview")
+    plt.xlabel("Time (s)")
+    plt.ylabel("Amplitude")
+    plt.show()
+
+
+if __name__ == "__main__":
+    main()

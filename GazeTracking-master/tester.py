@@ -27,7 +27,7 @@ def detect_blinks_from_video(video_path):
         gaze.refresh(frame)
         frame = gaze.annotated_frame()
 
-        if gaze.is_blinking(): #if blinking, then EOG
+        if not (gaze.is_center()): #if blinking, then EOG
             label_eeg = "EEG"
             label_eog = "EOG X"
             cv2.putText(frame, label_eeg, (90, 80), cv2.FONT_HERSHEY_DUPLEX, 3.2, (0,0,0), 2)
