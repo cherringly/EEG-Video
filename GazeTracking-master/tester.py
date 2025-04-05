@@ -27,22 +27,23 @@ def detect_blinks_from_video(video_path):
         gaze.refresh(frame)
         frame = gaze.annotated_frame()
 
-        if gaze.is_blinking():
+        if gaze.is_blinking(): #if blinking, then EOG
             label_eeg = "EEG"
-            label_emg = "EMG X"
+            label_eog = "EOG X"
             cv2.putText(frame, label_eeg, (90, 80), cv2.FONT_HERSHEY_DUPLEX, 3.2, (0,0,0), 2)
-            cv2.putText(frame, label_emg, (90, 170), cv2.FONT_HERSHEY_DUPLEX, 3.2, (255, 0, 0), 2)
-        else:
+            cv2.putText(frame, label_eog, (90, 170), cv2.FONT_HERSHEY_DUPLEX, 3.2, (0, 0, 255), 2)
+        else: #if not blinking, then EEG
             label_eeg = "EEG X"
-            label_emg = "EMG"
-            cv2.putText(frame, label_eeg, (90, 80), cv2.FONT_HERSHEY_DUPLEX, 3.2, (255, 0, 0), 2)
-            cv2.putText(frame, label_emg, (90, 170), cv2.FONT_HERSHEY_DUPLEX, 3.2, (0,0, 0), 2)
+            label_eog = "EOG"
+            cv2.putText(frame, label_eeg, (90, 80), cv2.FONT_HERSHEY_DUPLEX, 3.2, (0, 255, 0), 2) #bgr
+            cv2.putText(frame, label_eog, (90, 170), cv2.FONT_HERSHEY_DUPLEX, 3.2, (0,0, 0), 2)
             
-        
+        cv2.putText(frame, "EMG", (90, 260), cv2.FONT_HERSHEY_DUPLEX, 3.2, (0,0, 0), 2)
+        cv2.putText(frame, "ECG", (90, 350), cv2.FONT_HERSHEY_DUPLEX, 3.2, (0,0, 0), 2)
 
         # Overlay the label on the frame
         # cv2.putText(frame, label_eeg, (90, 80), cv2.FONT_HERSHEY_DUPLEX, 3.2, (255, 49, 49), 2)
-        # cv2.putText(frame, label_emg, (90, 170), cv2.FONT_HERSHEY_DUPLEX, 3.2, (170, 255, 0), 2)
+        # cv2.putText(frame, label_eog, (90, 170), cv2.FONT_HERSHEY_DUPLEX, 3.2, (170, 255, 0), 2)
 
         # Display the frame
         cv2.imshow("Blink Detection", frame)
