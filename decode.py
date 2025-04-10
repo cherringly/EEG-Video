@@ -28,30 +28,32 @@ def fn_BionodeBinOpen(packedFileDir: str, ADCres: int, sampR: int) -> dict:
     bytesPerSample = ADCres // 8
     packet_size = 58
     packetNum = len(rawData) // packet_size
-    channelsData = np.zeros((numChannels, 13 * packetNum), dtype=int)
-
+    channelsData = np.zeros((numChannels, 13*(packetNum - 1)), dtype=np.uint32)  # Adjust dtype as needed
     print("Unpacking Data from file... ")
-
+    print(channelsData.dtype)
     for i in range(1, packetNum):
         tempPacket = rawData[(packet_size * i):(packet_size * (i + 1))]
         X = tempPacket[7:-11]  # 8:end-11 in 0-based indexing
 
-        yarr = [
-            (X[3*j] << 16) | (X[3*j + 1] << 8) | X[3*j + 2]
+        yarr = np.array([
+            (int(X[3*j]) << 16) | (int(X[3*j + 1]) << 8) | int(X[3*j + 2])
             for j in range(len(X) // 3)
-        ]
+        ], dtype=np.uint32)
 
-        zarr = []
-        for y in yarr:
+        zarr = np.zeros(2 * len(yarr), dtype=np.uint16)
+        for j, y in enumerate(yarr):
             z1 = (y & 0xFFF000) >> 12
             z2 = y & 0x000FFF
-            zarr.extend([z1, z2])
+            zarr[2 * j] = z1
+            zarr[2 * j + 1] = z2
+
 
         for idx, val in enumerate(zarr):
-            channel = (idx % numChannels)
-            pos = (13 * (i - 1)) + (idx // numChannels)
+            channel = int(idx % numChannels)
+            pos = len(yarr) * (i - 1) + int(np.ceil((idx + 1) / numChannels)) - 1
             if pos < channelsData.shape[1]:
-                channelsData[channel, pos] = val
+                channelsData[channel, pos] = int(val)
+
 
         if i % max(1, packetNum // 20) == 0:
             print(f"Progress: {int((i / packetNum) * 100)}%")
