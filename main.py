@@ -48,6 +48,7 @@ plt.xlabel("s")
 plt.ylabel("V")
 plt.title("Preprocessed Data")
 plt.tight_layout()
+plt.show()
 
 # Get BPM plot
 peaks, _ = find_peaks(PPfiltChaB, height=-3.3e-4, distance=0.4 * fsBionode)  # Detect R-peaks
@@ -82,6 +83,7 @@ plt.xlabel('Time (s)')
 plt.ylabel('V')
 plt.title('ECG Signal')
 plt.tight_layout()
+plt.show()
 
 print(np.mean(bpm_values))
 
@@ -103,5 +105,6 @@ for i, ch in enumerate(channelsBionode):
 
 plt.tight_layout()
 plt.set_cmap('jet')
+plt.show()
 
 print("Spectral Analysis Complete")
