@@ -2,12 +2,14 @@
 # *Description*: This program loads Bionode files that are ECG and detects
 # the BPM
 
+import csv
+
 import numpy as np
 import scipy.signal as signal
 import matplotlib.pyplot as plt
 from scipy.signal import butter, filtfilt, find_peaks
 import os
-from bionodebinopen import fn_BionodeBinOpen  # You must define this function separately
+from bionodebinopen import fn_BionodeBinOpen as bn  # You must define this function separately
 
 # Clean everything (Python doesn't need close all, clear all, clc)
 
@@ -15,7 +17,7 @@ from bionodebinopen import fn_BionodeBinOpen  # You must define this function se
 expDay = '25-31-03'  # folder or name of the experiment
 fileN = 7  # File to inspect in the folder
 channel = 1  # Channel to look at
-fsBionode = 25e3  # Sampling rate
+fsBionode = (25e3)/2  # Sampling rate
 ADCres = 12  # ADC resolution
 # dataFolder = os.path.join(os.getcwd(), 'Data')
 # files = sorted(os.listdir(os.path.join(dataFolder, expDay)))
@@ -32,6 +34,51 @@ rawChaB = np.array(earData['channelsData'])
 rawChaB = (rawChaB - 2**11) * 1.8 / (2**12 * 1000)  # Adjust using -60 dB and 12 bits for 1.8V
 bB, aB = butter(4, highCutoff / (fsBionode / 2), btype='low')
 PPfiltChaB = filtfilt(bB, aB, rawChaB[channel-1, :])
+# Constants
+fs = fsBionode  # Sampling rate
+win_sec = 0.5
+step_sec = 0.05
+win_samples = int(win_sec * fs)
+step_samples = int(step_sec * fs)
+
+# Frequency resolution setup
+freq_res = 1  # Hz
+nfft = int(fs)  # ensure 1 Hz resolution: fs / nfft = 1 Hz
+freqs = np.fft.rfftfreq(nfft, d=1/fs)
+freq_mask = (freqs >= 0) & (freqs <= 50)
+selected_freqs = freqs[freq_mask]
+
+# Sliding FFT
+log_power_matrix = []
+time_stamps = []
+
+for start in range(0, len(PPfiltChaB) - win_samples, step_samples):
+    end = start + win_samples
+    window = PPfiltChaB[start:end]
+
+    if len(window) < win_samples:
+        continue
+
+    windowed_signal = window * np.hamming(len(window))
+    fft_data = np.fft.rfft(windowed_signal, n=nfft)
+    power = np.abs(fft_data) ** 2
+    power_db = 10 * np.log10(power + 1e-12)  # avoid log(0)
+
+    log_power_matrix.append(power_db[freq_mask])
+    time_stamps.append(start / fs)
+
+# Save CSV
+csv_path = os.path.join(outputFolder, 'fft_sliding_0-50Hz.csv')
+with open(csv_path, mode='w', newline='') as file:
+    writer = csv.writer(file)
+    header = ['Time (s)'] + [f'{f:.0f} Hz' for f in selected_freqs]
+    writer.writerow(header)
+
+    for t, row in zip(time_stamps, log_power_matrix):
+        writer.writerow([f'{t:.2f}'] + [f'{val:.2f}' for val in row])
+
+print(f"Sliding window FFT saved to: {csv_path}")
+
 timeB = np.arange(0, len(PPfiltChaB)) / fsBionode
 
 plt.figure()
