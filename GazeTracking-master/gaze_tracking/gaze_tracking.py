@@ -117,11 +117,15 @@ class GazeTracking(object):
             blinking_ratio = (self.eye_left.blinking + self.eye_right.blinking) / 2
             return blinking_ratio > 3.8
 
-    def annotated_frame(self):
-        """Returns the main frame with pupils highlighted"""
+    def annotated_frame(self, show_pupils=False):
+        """Returns the main frame with optional pupil highlighting
+        
+        Arguments:
+            show_pupils (bool): Whether to draw pupil markers on the frame
+        """
         frame = self.frame.copy()
 
-        if self.pupils_located:
+        if self.pupils_located and show_pupils:
             color = (0, 255, 0)
             x_left, y_left = self.pupil_left_coords()
             x_right, y_right = self.pupil_right_coords()
