@@ -5,49 +5,57 @@ import numpy as np
 class MediaPipeGazeTracking:
     def __init__(self):
         self.frame = None
-        self.face_mesh = mp.solutions.face_mesh.FaceMesh(static_image_mode=False,
-                                                         max_num_faces=1,
-                                                         refine_landmarks=True,
-                                                         min_detection_confidence=0.5,
-                                                         min_tracking_confidence=0.5)
-        self.blink_threshold = 0.23  # tweakable
+        self.face_mesh = mp.solutions.face_mesh.FaceMesh(
+            static_image_mode=False,
+            max_num_faces=1,
+            refine_landmarks=True,
+            min_detection_confidence=0.5,
+            min_tracking_confidence=0.5
+        )
         self.left_eye_indices = [33, 160, 158, 133, 153, 144]
         self.right_eye_indices = [362, 385, 387, 263, 373, 380]
+        self.baseline_distance = None
+        self.blink_threshold_ratio = 0.7  # Eyes must come at least 30% closer to count as blink
 
     def refresh(self, frame):
         self.frame = frame
         self.landmarks = None
-
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         results = self.face_mesh.process(rgb)
         if results.multi_face_landmarks:
             self.landmarks = results.multi_face_landmarks[0].landmark
+            # Update baseline distance if not set
+            if self.baseline_distance is None:
+                self._update_baseline_distance()
 
-    def _eye_aspect_ratio(self, eye_points):
-        p1 = np.array([eye_points[1].x, eye_points[1].y])
-        p2 = np.array([eye_points[5].x, eye_points[5].y])
-        p3 = np.array([eye_points[2].x, eye_points[2].y])
-        p4 = np.array([eye_points[4].x, eye_points[4].y])
-        p0 = np.array([eye_points[0].x, eye_points[0].y])
-        p5 = np.array([eye_points[3].x, eye_points[3].y])
+    def _update_baseline_distance(self):
+        """Calculate normal distance between eye centers for reference"""
+        left_eye = self._get_eye_points(self.left_eye_indices)
+        right_eye = self._get_eye_points(self.right_eye_indices)
+        left_center = np.mean(left_eye, axis=0)
+        right_center = np.mean(right_eye, axis=0)
+        self.baseline_distance = np.linalg.norm(left_center - right_center)
 
-        vertical1 = np.linalg.norm(p2 - p4)
-        vertical2 = np.linalg.norm(p3 - p5)
-        horizontal = np.linalg.norm(p0 - p1)
-
-        return (vertical1 + vertical2) / (2.0 * horizontal + 1e-6)
+    def _get_eye_points(self, indices):
+        """Convert landmarks to numpy array of eye points"""
+        h, w = self.frame.shape[:2]
+        return np.array([(self.landmarks[i].x * w, self.landmarks[i].y * h) 
+                        for i in indices])
 
     def is_blinking(self):
-        if not self.landmarks:
+        """Detect blink based on eyes moving closer together"""
+        if not self.landmarks or self.baseline_distance is None:
             return False
 
-        left_eye = [self.landmarks[i] for i in self.left_eye_indices]
-        right_eye = [self.landmarks[i] for i in self.right_eye_indices]
-        left_ear = self._eye_aspect_ratio(left_eye)
-        right_ear = self._eye_aspect_ratio(right_eye)
-        ear_avg = (left_ear + right_ear) / 2.0
-
-        return ear_avg < self.blink_threshold
+        left_eye = self._get_eye_points(self.left_eye_indices)
+        right_eye = self._get_eye_points(self.right_eye_indices)
+        
+        left_center = np.mean(left_eye, axis=0)
+        right_center = np.mean(right_eye, axis=0)
+        current_distance = np.linalg.norm(left_center - right_center)
+        
+        # Blink detected if eyes are significantly closer than baseline
+        return current_distance < self.baseline_distance * self.blink_threshold_ratio
 
     def annotated_frame(self):
         if not self.landmarks:
@@ -55,15 +63,33 @@ class MediaPipeGazeTracking:
 
         frame = self.frame.copy()
         h, w, _ = frame.shape
+        
+        # Draw eye landmarks
         for idx in self.left_eye_indices + self.right_eye_indices:
             pt = self.landmarks[idx]
             x, y = int(pt.x * w), int(pt.y * h)
             cv2.circle(frame, (x, y), 2, (0, 255, 0), -1)
+        
+        # Add distance info if baseline is set
+        if self.baseline_distance is not None:
+            left_eye = self._get_eye_points(self.left_eye_indices)
+            right_eye = self._get_eye_points(self.right_eye_indices)
+            left_center = np.mean(left_eye, axis=0).astype(int)
+            right_center = np.mean(right_eye, axis=0).astype(int)
+            
+            # Draw line between eyes
+            cv2.line(frame, tuple(left_center), tuple(right_center), (255, 0, 0), 2)
+            
+            # Display distance ratio
+            current_distance = np.linalg.norm(left_center - right_center)
+            ratio = current_distance / self.baseline_distance
+            cv2.putText(frame, f"Dist Ratio: {ratio:.2f}", (50, 50), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
 
         return frame
 
 
-
+# Main execution
 cap = cv2.VideoCapture("3.31.25_1.mov")
 gaze = MediaPipeGazeTracking()
 
