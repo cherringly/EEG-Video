@@ -83,7 +83,7 @@ print(f"Spectrogram saved to {plot_path}")
 plt.show()
 
 
-
+# TODO: adjust clim (in matlab) to play with colorbar
 
 
 

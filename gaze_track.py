@@ -129,16 +129,16 @@ class MediaPipeGazeTracking:
         cv2.putText(frame, f"Time: {timestamp_str}", (50, y_pos), 
                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
         y_pos += 30
-        cv2.putText(frame, f"EAR: {ear:.2f}", (50, y_pos), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-        y_pos += 30
-        cv2.putText(frame, f"Blinks: {self.blink_counter}", (50, y_pos), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-        y_pos += 30
+        # cv2.putText(frame, f"EAR: {ear:.2f}", (50, y_pos), 
+        #            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        # y_pos += 30
+        # cv2.putText(frame, f"Blinks: {self.blink_counter}", (50, y_pos), 
+        #            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        # y_pos += 30
         
         # Display eye state
         if ear < self.ear_threshold and self.frame_counter >= self.consec_frames:
-            cv2.putText(frame, "BLINKING", (50, y_pos), 
+            cv2.putText(frame, "EYES CLOSED", (50, y_pos), 
                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
         else:
             cv2.putText(frame, "EYES OPEN", (50, y_pos), 

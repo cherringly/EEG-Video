@@ -154,7 +154,7 @@ class CombinedAnalysis:
         # Overlay vertical regions where eyes are closed
         for timestamp, state, _ in self.gaze_tracker.eye_state_history:
             if state == "CLOSED":
-                plt.axvspan(timestamp - 0.025, timestamp + 0.025, color='blue', alpha=0.2)
+                plt.axvspan(timestamp - 0.025, timestamp + 0.025, color='blue', alpha=0.01)
 
         plt.tight_layout()
         plt.show()
