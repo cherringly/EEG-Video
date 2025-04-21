@@ -148,7 +148,7 @@ class MediaPipeGazeTracking:
 
 
 # Main execution
-cap = cv2.VideoCapture("3.31.25_1.mov")
+cap = cv2.VideoCapture("video_recordings/3.31.25_1.mov")
 gaze = MediaPipeGazeTracking()
 
 # Get video FPS to calculate timestamps

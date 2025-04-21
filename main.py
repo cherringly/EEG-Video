@@ -1,203 +1,247 @@
 import numpy as np
 from scipy import signal
-import time  # For debugging execution time
 import pandas as pd
+import cv2
+import mediapipe as mp
 import matplotlib.pyplot as plt
 import os
-from bionodebinopen import fn_BionodeBinOpen  # You must define this function separately
+from bionodebinopen import fn_BionodeBinOpen
 
-
-
-expDay = '25-31-03'  # folder or name of the experiment
-fileN = 7  # File to inspect in the folder
-channel = 1  # Channel to look at
-fsBionode = (25e3)/2  # Sampling rate
-ADCres = 12  # ADC resolution
-blockPath = '/Users/maryzhang/Downloads/EarEEG_Matlab/Data/25-31-03/2025.03.31.17.53.13_AAO-18.bin'
-earData = fn_BionodeBinOpen(blockPath, ADCres, fsBionode)
-outputFolder = '/Users/maryzhang/Downloads/EarEEG_Matlab'  # output folder
-recording_duration_min = 10
-recording_duration_sec = recording_duration_min * 60  # Convert to seconds
-
-
-# Preprocessing
-highCutoff = 20  # frequency below which take the filter
-# TODO: Isn't this a lowpass filter, not highpass?
-
-# Load and preprocess data
-rawChaB = np.array(earData['channelsData'])
-rawChaB = (rawChaB - 2**11) * 1.8 / (2**12 * 1000)
-bB, aB = signal.butter(4, highCutoff / (fsBionode / 2), btype='low')
-PPfiltChaB = signal.filtfilt(bB, aB, rawChaB[channel-1, :])
-
-# STFT Parameters
-fs = fsBionode
-win_sec = 0.5  # Window size in seconds
-step_sec = 0.05  # Step size in seconds
-win_samples = int(win_sec * fs)
-step_samples = int(step_sec * fs)
-nperseg = win_samples
-noverlap = win_samples - step_samples
-
-# Compute STFT
-print("Computing STFT...")
-start_time = time.time()
-f, t, Zxx = signal.stft(PPfiltChaB, fs=fs, nperseg=nperseg, noverlap=noverlap)
-power = np.abs(Zxx)**2  # Convert to power spectral density
-
-# Filter frequencies of interest (0-20 Hz)
-freq_mask = (f >= 0.1) & (f <= highCutoff)
-f_filtered = f[freq_mask]
-power_filtered = power[freq_mask, :]
-
-print(f"STFT computed in {time.time() - start_time:.2f} seconds")
-
-# Create output directory if it doesn't exist
-os.makedirs(outputFolder, exist_ok=True)
-
-# Export STFT results to CSV
-output_path = os.path.join(outputFolder, 'stft_results.csv')
-print(f"Exporting STFT results to {output_path}")
-
-# Prepare DataFrame for CSV export
-stft_df = pd.DataFrame(power_filtered.T, 
-                      index=t, 
-                      columns=[f"{freq:.1f} Hz" for freq in f_filtered])
-stft_df.index.name = 'Time (s)'
-stft_df.to_csv(output_path)
-
-# Plot the spectrogram
-plt.figure(figsize=(12, 6))
-plt.pcolormesh(t, f_filtered, 10 * np.log10(power_filtered),
-             shading='gouraud', cmap='jet')
-plt.colorbar(label='Power/Frequency [dB/Hz]')
-plt.ylabel('Frequency [Hz]')
-plt.xlabel('Time [s]')
-plt.title(f'Short-Time Fourier Transform (STFT)\nWindow: {win_sec}s, Step: {step_sec}s')
-plt.tight_layout()
-
-# Save the plot
-plot_path = os.path.join(outputFolder, 'stft_spectrogram.png')
-plt.savefig(plot_path)
-print(f"Spectrogram saved to {plot_path}")
-plt.show()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# Alpha Power Analysis
-print("Starting alpha power analysis...")
-start_time = time.time()
-
-# Downsample the signal to 250 Hz (for faster processing)
-downsample_factor = int(fsBionode // 250)
-fs_downsampled = fsBionode / downsample_factor
-signal_downsampled = PPfiltChaB[::downsample_factor]
-
-print(f"Downsampled from {fsBionode} Hz to {fs_downsampled} Hz")
-print(f"Signal length reduced from {len(PPfiltChaB)} to {len(signal_downsampled)} samples")
-
-# Split into 1-minute chunks (using downsampled signal)
-minute_samples = int(60 * fs_downsampled)
-minutes = [signal_downsampled[i * minute_samples : (i + 1) * minute_samples] 
-           for i in range(min(10, len(signal_downsampled) // minute_samples))]  # Only first 10 minutes
-
-print(f"Processing {len(minutes)} minutes...")
-
-# Compute alpha power for each minute
-print("\nMinute | Alpha Power (8-12 Hz) | Expected Pattern")
-print("-----------------------------------------------")
-
-for i, minute_signal in enumerate(minutes):
-    try:
-        # Use Welch's method with minimal settings
-        freqs, psd = signal.welch(minute_signal, fs_downsampled, 
-                                 nperseg=min(256, len(minute_signal)),  # Prevent seg > data
-                                 scaling='density')
+class CombinedAnalysis:
+    def __init__(self):
+        # EEG Configuration
+        self.eeg_config = {
+            'blockPath': '/Users/maryzhang/Downloads/EarEEG_Matlab/Data/25-31-03/2025.03.31.17.53.13_AAO-18.bin',
+            'outputFolder': '/Users/maryzhang/Downloads/EarEEG_Matlab',
+            'channel': 1,
+            'fsBionode': (25e3)/2,
+            'ADCres': 12,
+            'highCutoff': 20
+        }
         
-        alpha_mask = (freqs >= 8) & (freqs <= 12)
-        alpha_power = np.trapz(psd[alpha_mask], freqs[alpha_mask])  # More accurate than sum
+        # Gaze Tracking Configuration
+        self.gaze_tracker = MediaPipeGazeTracking()
         
-        expected = "HIGH (even min)" if (i+1) % 2 == 0 else "LOW (odd min)"
-        print(f"{i+1:>6} | {alpha_power:>18.2f} | {expected}")
+        # STFT Parameters
+        self.stft_params = {
+            'win_sec': 0.5,
+            'step_sec': 0.05
+        }
         
-    except Exception as e:
-        print(f"Error processing minute {i+1}: {str(e)}")
+        # Combined Data Storage
+        self.combined_data = []
+        
+    def load_eeg_data(self):
+        """Load and preprocess EEG data"""
+        print("Loading EEG data...")
+        earData = fn_BionodeBinOpen(self.eeg_config['blockPath'], 
+                                   self.eeg_config['ADCres'], 
+                                   self.eeg_config['fsBionode'])
+        
+        rawChaB = np.array(earData['channelsData'])
+        rawChaB = (rawChaB - 2**11) * 1.8 / (2**12 * 1000)
+        
+        # Apply low-pass filter
+        bB, aB = signal.butter(4, self.eeg_config['highCutoff'] / (self.eeg_config['fsBionode'] / 2), 
+                  btype='low')
+        self.PPfiltChaB = signal.filtfilt(bB, aB, rawChaB[self.eeg_config['channel']-1, :])
+        
+    def process_video(self, video_path):
+        """Process video for eye state detection"""
+        print("Processing video for eye state detection...")
+        cap = cv2.VideoCapture(video_path)
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        frame_count = 0
+        
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            
+            current_time = frame_count / fps
+            frame_count += 1
+            
+            self.gaze_tracker.refresh(frame)
+            self.gaze_tracker.is_blinking(current_time)
+            
+        cap.release()
+        cv2.destroyAllWindows()
+        
+    def compute_stft(self):
+        """Compute STFT on EEG data"""
+        print("Computing STFT...")
+        fs = self.eeg_config['fsBionode']
+        win_samples = int(self.stft_params['win_sec'] * fs)
+        step_samples = int(self.stft_params['step_sec'] * fs)
+        
+        f, t, Zxx = signal.stft(self.PPfiltChaB, fs=fs,
+                               nperseg=win_samples,
+                               noverlap=win_samples-step_samples)
+        self.power = np.abs(Zxx)**2
+        
+        # Filter frequencies
+        freq_mask = (f >= 0.1) & (f <= self.eeg_config['highCutoff'])
+        self.f_filtered = f[freq_mask]
+        self.power_filtered = self.power[freq_mask, :]
+        self.stft_times = t
+        
+    def synchronize_data(self):
+        """Combine eye state and EEG spectral data"""
+        print("Synchronizing data...")
+        
+        # Get eye state data
+        eye_data = pd.DataFrame(self.gaze_tracker.eye_state_history,
+                              columns=["Timestamp (s)", "Eye State", "EAR Value"])
+        
+        # Get STFT data
+        stft_df = pd.DataFrame(self.power_filtered.T,
+                             index=self.stft_times,
+                             columns=[f"{freq:.1f} Hz" for freq in self.f_filtered])
+        
+        # Merge dataframes using nearest timestamp matching
+        for stft_time in stft_df.index:
+            # Find closest eye state measurement
+            time_diff = np.abs(eye_data["Timestamp (s)"] - stft_time)
+            closest_idx = time_diff.idxmin()
+            
+            if time_diff[closest_idx] < 0.1:  # Only match if within 100ms
+                eye_state = eye_data.iloc[closest_idx]["Eye State"]
+                ear_value = eye_data.iloc[closest_idx]["EAR Value"]
+            else:
+                eye_state = "NO MATCH"
+                ear_value = np.nan
+                
+            # Get frequency power values
+            freq_powers = stft_df.loc[stft_time].to_dict()
+            
+            # Store combined data
+            self.combined_data.append({
+                "Timestamp": stft_time,
+                "Eye_State": eye_state,
+                "EAR_Value": ear_value,
+                **freq_powers
+            })
+            
+    def export_results(self):
+        """Export combined results to CSV"""
+        os.makedirs(self.eeg_config['outputFolder'], exist_ok=True)
+        output_path = os.path.join(self.eeg_config['outputFolder'], 'combined_analysis.csv')
+        
+        df = pd.DataFrame(self.combined_data)
+        df.to_csv(output_path, index=False)
+        print(f"Combined analysis exported to {output_path}")
+        
+        return df
+    
+    def plot_spectrogram_with_eye_state(self):
+        """Plot STFT Spectrogram with Eye State Overlay"""
 
-timeB = np.arange(0, len(PPfiltChaB)) / fsBionode
+        print("Plotting spectrogram with eye state overlay...")
 
-# TODO: for some reason, when plotting preprocessed data, spectral analysis doesn't show up
-# plt.figure()
-# plt.suptitle("In Ear1")
-# plt.subplot(2, 1, 1)
-# plt.plot(timeB, rawChaB[channel-1, :])
-# plt.xlabel("s")
-# plt.ylabel("V")
-# plt.title("Raw Data")
+        t = self.stft_times
+        f = self.f_filtered
+        Sxx = self.power_filtered
 
-# plt.subplot(2, 1, 2)
-# plt.plot(timeB, PPfiltChaB)
-# plt.xlabel("s")
-# plt.ylabel("V")
-# plt.title("Preprocessed Data")
-# plt.tight_layout()
-# plt.show()
+        plt.figure(figsize=(15, 6))
+        plt.title("STFT Spectrogram with Eye Closure Overlay")
 
-# Spectral Analysis
-plt.figure(figsize=(12, 6))
-plt.suptitle(f'Spectral Analysis (0-50 Hz) - Full {recording_duration_min} min Recording')
-channelsBionode = [channel]
+        # Plot spectrogram
+        plt.pcolormesh(t, f, 10 * np.log10(Sxx), shading='gouraud', cmap='jet')
+        plt.colorbar(label='Power [dB]')
+        plt.xlabel('Time [s]')
+        plt.ylabel('Frequency [Hz]')
 
-for i, ch in enumerate(channelsBionode):
-    # Calculate spectrogram with parameters that ensure full duration coverage
-    window_size_sec = 2  # Window size in seconds
-    nperseg = int(fsBionode * window_size_sec)
-    noverlap = int(nperseg * 0.9)  # 90% overlap
+        # Overlay vertical regions where eyes are closed
+        for timestamp, state, _ in self.gaze_tracker.eye_state_history:
+            if state == "CLOSED":
+                plt.axvspan(timestamp - 0.025, timestamp + 0.025, color='blue', alpha=0.2)
 
-    # Calculate spectrogram
-    f, t, Sxx = signal.spectrogram(PPfiltChaB, fs=fsBionode,
-                                 nperseg=nperseg,
-                                 noverlap=noverlap,
-                                 scaling='density',
-                                 mode='psd')
-
-    # Verify time bins
-    print(f"Spectrogram time bins: {len(t)}")
-    print(f"Last time point: {t[-1]:.2f} seconds")
-
-    # Filter frequencies
-    freq_mask = (f >= 0.1) & (f <= highCutoff)
-    f_filtered = f[freq_mask]
-    Sxx_filtered = Sxx[freq_mask, :]
-
-    # Plot
-    plt.subplot(len(channelsBionode), 1, i+1)
-    plt.pcolormesh(t / 60, f_filtered, 10 * np.log10(Sxx_filtered),
-                 shading='gouraud', cmap='jet')
-    plt.ylabel('Frequency [Hz]')
-    plt.xlabel('Time [min]')
-    plt.title(f'Spectrogram: Channel {ch}')
-    plt.colorbar(label='Power/Frequency [dB/Hz]')
-    plt.xlim(0, recording_duration_min)
+        plt.tight_layout()
+        plt.show()
 
 
-plt.tight_layout()
-plt.show()
+class MediaPipeGazeTracking:
+    def __init__(self):
+        self.frame = None
+        self.face_mesh = mp.solutions.face_mesh.FaceMesh(
+            static_image_mode=False,
+            max_num_faces=1,
+            refine_landmarks=True,
+            min_detection_confidence=0.5,
+            min_tracking_confidence=0.5
+        )
+        self.left_eye_indices = [33, 160, 158, 133, 153, 144]
+        self.right_eye_indices = [362, 385, 387, 263, 373, 380]
+        self.ear_threshold = 0.25
+        self.consec_frames = 3
+        self.frame_counter = 0
+        self.blink_counter = 0
+        self.eye_state_history = []
+        self.last_recorded_time = -0.05
 
-print("Spectral Analysis Complete")
+    def refresh(self, frame):
+        self.frame = frame
+        self.landmarks = None
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        results = self.face_mesh.process(rgb)
+        if results.multi_face_landmarks:
+            self.landmarks = results.multi_face_landmarks[0].landmark
 
+    def _get_eye_points(self, indices):
+        h, w = self.frame.shape[:2]
+        return np.array([(self.landmarks[i].x * w, self.landmarks[i].y * h) 
+                        for i in indices])
 
-print(f"\nCompleted in {time.time() - start_time:.2f} seconds")
+    def _calculate_ear(self, eye_points):
+        p1, p2, p3, p4, p5, p6 = eye_points
+        A = np.linalg.norm(p2 - p6)
+        B = np.linalg.norm(p3 - p5)
+        C = np.linalg.norm(p1 - p4)
+        return (A + B) / (2.0 * C)
+
+    def is_blinking(self, current_time):
+        if not self.landmarks:
+            if current_time >= self.last_recorded_time + 0.05:
+                self.eye_state_history.append((current_time, "NO FACE", np.nan))
+                self.last_recorded_time = current_time
+            return False
+
+        left_eye = self._get_eye_points(self.left_eye_indices)
+        right_eye = self._get_eye_points(self.right_eye_indices)
+        left_ear = self._calculate_ear(left_eye)
+        right_ear = self._calculate_ear(right_eye)
+        ear = (left_ear + right_ear) / 2.0
+        
+        if ear < self.ear_threshold:
+            eye_state = "CLOSED"
+            self.frame_counter += 1
+        else:
+            eye_state = "OPEN"
+            if self.frame_counter >= self.consec_frames:
+                self.blink_counter += 1
+            self.frame_counter = 0
+        
+        if current_time >= self.last_recorded_time + 0.05:
+            self.eye_state_history.append((current_time, eye_state, ear))
+            self.last_recorded_time = current_time
+        
+        return eye_state == "CLOSED" and self.frame_counter >= self.consec_frames
+
+# Main execution
+if __name__ == "__main__":
+    analyzer = CombinedAnalysis()
+    
+    # Process EEG data
+    analyzer.load_eeg_data()
+    analyzer.compute_stft()
+    
+    # Process video data (replace with your video path)
+    analyzer.process_video("video_recordings/3.31.25_1.mov")
+    analyzer.plot_spectrogram_with_eye_state()
+
+    
+    # Combine and export results
+    analyzer.synchronize_data()
+    results_df = analyzer.export_results()
+    
+    print("Analysis complete!")
