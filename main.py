@@ -1,15 +1,11 @@
 import numpy as np
 from scipy import signal
 import time  # For debugging execution time
-
-import csv
 import pandas as pd
-import numpy as np
-import scipy.signal as signal
 import matplotlib.pyplot as plt
-from scipy.signal import butter, filtfilt, find_peaks
 import os
 from bionodebinopen import fn_BionodeBinOpen  # You must define this function separately
+
 
 
 expDay = '25-31-03'  # folder or name of the experiment
@@ -86,17 +82,23 @@ plt.savefig(plot_path)
 print(f"Spectrogram saved to {plot_path}")
 plt.show()
 
-# Keep your existing Welch analysis code
-print("\nContinuing with Welch analysis...")
-# [Your existing Welch analysis code here]
-
-# [IMPLEMENT SLIDING WINDOW FOURIER ANALYSIS HERE. IGNORE BELOW CODE]
 
 
 
-# [Keep your existing imports and data loading code]
 
-# ===== DEBUGGING ADDITIONS =====
+
+
+
+
+
+
+
+
+
+
+
+
+# Alpha Power Analysis
 print("Starting alpha power analysis...")
 start_time = time.time()
 
