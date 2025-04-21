@@ -28,23 +28,71 @@ recording_duration_sec = recording_duration_min * 60  # Convert to seconds
 highCutoff = 20  # frequency below which take the filter
 # TODO: Isn't this a lowpass filter, not highpass?
 
-# Bionode
+# Load and preprocess data
 rawChaB = np.array(earData['channelsData'])
-rawChaB = (rawChaB - 2**11) * 1.8 / (2**12 * 1000)  # Adjust using -60 dB and 12 bits for 1.8V
-bB, aB = butter(4, highCutoff / (fsBionode / 2), btype='low')
-PPfiltChaB = filtfilt(bB, aB, rawChaB[channel-1, :])
-# Constants
-fs = fsBionode  # Sampling rate
-win_sec = 0.5
-step_sec = 0.05
+rawChaB = (rawChaB - 2**11) * 1.8 / (2**12 * 1000)
+bB, aB = signal.butter(4, highCutoff / (fsBionode / 2), btype='low')
+PPfiltChaB = signal.filtfilt(bB, aB, rawChaB[channel-1, :])
+
+# STFT Parameters
+fs = fsBionode
+win_sec = 0.5  # Window size in seconds
+step_sec = 0.05  # Step size in seconds
 win_samples = int(win_sec * fs)
 step_samples = int(step_sec * fs)
+nperseg = win_samples
+noverlap = win_samples - step_samples
 
-window_size = int(60*fs)  # 60 seconds
-# ===== DEBUGGING ADDITIONS =====
-import numpy as np
-from scipy import signal
-import time  # For debugging execution time
+# Compute STFT
+print("Computing STFT...")
+start_time = time.time()
+f, t, Zxx = signal.stft(PPfiltChaB, fs=fs, nperseg=nperseg, noverlap=noverlap)
+power = np.abs(Zxx)**2  # Convert to power spectral density
+
+# Filter frequencies of interest (0-20 Hz)
+freq_mask = (f >= 0.1) & (f <= highCutoff)
+f_filtered = f[freq_mask]
+power_filtered = power[freq_mask, :]
+
+print(f"STFT computed in {time.time() - start_time:.2f} seconds")
+
+# Create output directory if it doesn't exist
+os.makedirs(outputFolder, exist_ok=True)
+
+# Export STFT results to CSV
+output_path = os.path.join(outputFolder, 'stft_results.csv')
+print(f"Exporting STFT results to {output_path}")
+
+# Prepare DataFrame for CSV export
+stft_df = pd.DataFrame(power_filtered.T, 
+                      index=t, 
+                      columns=[f"{freq:.1f} Hz" for freq in f_filtered])
+stft_df.index.name = 'Time (s)'
+stft_df.to_csv(output_path)
+
+# Plot the spectrogram
+plt.figure(figsize=(12, 6))
+plt.pcolormesh(t, f_filtered, 10 * np.log10(power_filtered),
+             shading='gouraud', cmap='jet')
+plt.colorbar(label='Power/Frequency [dB/Hz]')
+plt.ylabel('Frequency [Hz]')
+plt.xlabel('Time [s]')
+plt.title(f'Short-Time Fourier Transform (STFT)\nWindow: {win_sec}s, Step: {step_sec}s')
+plt.tight_layout()
+
+# Save the plot
+plot_path = os.path.join(outputFolder, 'stft_spectrogram.png')
+plt.savefig(plot_path)
+print(f"Spectrogram saved to {plot_path}")
+plt.show()
+
+# Keep your existing Welch analysis code
+print("\nContinuing with Welch analysis...")
+# [Your existing Welch analysis code here]
+
+# [IMPLEMENT SLIDING WINDOW FOURIER ANALYSIS HERE. IGNORE BELOW CODE]
+
+
 
 # [Keep your existing imports and data loading code]
 
