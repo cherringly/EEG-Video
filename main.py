@@ -125,7 +125,7 @@ class CombinedAnalysis:
     def export_results(self):
         """Export combined results to CSV"""
         os.makedirs(self.eeg_config['outputFolder'], exist_ok=True)
-        output_path = os.path.join(self.eeg_config['outputFolder'], 'combined_analysis.csv')
+        output_path = os.path.join(self.eeg_config['outputFolder'], 'combined_analysis_1.csv')
         
         df = pd.DataFrame(self.combined_data)
         df.to_csv(output_path, index=False)
@@ -236,7 +236,7 @@ if __name__ == "__main__":
     analyzer.compute_stft()
     
     # Process video data (replace with your video path)
-    analyzer.process_video("video_recordings/3.31.25_1.mov")
+    analyzer.process_video("video_recordings/alessandro.mov")
     analyzer.plot_spectrogram_with_eye_state()
 
     
