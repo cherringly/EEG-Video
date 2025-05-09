@@ -1,3 +1,7 @@
+'''
+
+'''
+
 import numpy as np
 from scipy import signal
 import pandas as pd
@@ -6,6 +10,7 @@ import mediapipe as mp
 import matplotlib.pyplot as plt
 import os
 from bionodebinopen import fn_BionodeBinOpen
+
 
 class CombinedAnalysis:
     def __init__(self):
