@@ -1,5 +1,25 @@
 '''
+TODO: NOT COMPLETED
+- Having trouble with the sliding view
+
+
 Real-time EEG and Gaze Tracking Visualization
+1. Real Time EEG Simulation
+- Loads EEG data from .bin file
+- Sliding buffer for latest EEG data
+
+2. Real Time Gaze Tracking
+- Uses MediaPipe for eye landmarks
+- Calculates Eye Aspect Ratio (EAR) to detect blinks
+
+3. Real Time STFT
+- Computes STFT of EEG data
+
+4. Live Spectrogram
+- Top: video feed with gaze tracking
+- Bottom: real-time EEG spectrogram of alpha band
+
+5. Export
 '''
 
 import cv2

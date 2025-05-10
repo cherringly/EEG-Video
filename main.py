@@ -1,5 +1,24 @@
 '''
+1. EEG Processing
+- Loads EEG data from bin file
+- Low pass filter (20 Hz cutoff)
+- Computes STFT (0.5 sec window, 0.05 sec step)
 
+2. Eye-Tracking (with MediaPipe for eye landmarks)
+- Uses EAR (Eye Aspect Ratio) to detect blinks
+- If EAR < threshold (0.25), eye is considered closed
+- Tracks eye state every 0.05 seconds (20 fps)
+
+3. Synchronization of EEG and Eye-Tracking Data
+- Matches EEG spectral power with eye state
+- CSV file export
+  a. Timestamp (s)
+  b. Eye state (OPEN/CLOSED)
+  c. EAR value
+  d. Power values (0.1-20 Hz)
+
+4. Visualization
+- Plots spectrogram with eye-close events overlay
 '''
 
 import numpy as np
@@ -36,6 +55,7 @@ class CombinedAnalysis:
         # Combined Data Storage
         self.combined_data = []
         
+    
     def load_eeg_data(self):
         """Load and preprocess EEG data"""
         print("Loading EEG data...")
@@ -50,7 +70,8 @@ class CombinedAnalysis:
         bB, aB = signal.butter(4, self.eeg_config['highCutoff'] / (self.eeg_config['fsBionode'] / 2), 
                   btype='low')
         self.PPfiltChaB = signal.filtfilt(bB, aB, rawChaB[self.eeg_config['channel']-1, :])
-        
+
+
     def process_video(self, video_path):
         """Process video for eye state detection"""
         print("Processing video for eye state detection...")
@@ -72,6 +93,7 @@ class CombinedAnalysis:
         cap.release()
         cv2.destroyAllWindows()
         
+
     def compute_stft(self):
         """Compute STFT on EEG data"""
         print("Computing STFT...")
@@ -89,7 +111,8 @@ class CombinedAnalysis:
         self.f_filtered = f[freq_mask]
         self.power_filtered = self.power[freq_mask, :]
         self.stft_times = t
-        
+
+
     def synchronize_data(self):
         """Combine eye state and EEG spectral data"""
         print("Synchronizing data...")
@@ -126,7 +149,8 @@ class CombinedAnalysis:
                 "EAR_Value": ear_value,
                 **freq_powers
             })
-            
+
+
     def export_results(self):
         """Export combined results to CSV"""
         os.makedirs(self.eeg_config['outputFolder'], exist_ok=True)
@@ -138,6 +162,7 @@ class CombinedAnalysis:
         
         return df
     
+
     def plot_spectrogram_with_eye_state(self):
         """Plot STFT Spectrogram with Eye State Overlay"""
 
@@ -165,7 +190,11 @@ class CombinedAnalysis:
         plt.show()
 
 
+
+
+
 class MediaPipeGazeTracking:
+    # Eye Aspect Ratio (EAR) based gaze tracking using MediaPipe
     def __init__(self):
         self.frame = None
         self.face_mesh = mp.solutions.face_mesh.FaceMesh(
@@ -184,6 +213,8 @@ class MediaPipeGazeTracking:
         self.eye_state_history = []
         self.last_recorded_time = -0.05
 
+
+    # Refresh the frame and process landmarks
     def refresh(self, frame):
         self.frame = frame
         self.landmarks = None
@@ -192,11 +223,15 @@ class MediaPipeGazeTracking:
         if results.multi_face_landmarks:
             self.landmarks = results.multi_face_landmarks[0].landmark
 
+
+    # Get eye points from landmarks
     def _get_eye_points(self, indices):
         h, w = self.frame.shape[:2]
         return np.array([(self.landmarks[i].x * w, self.landmarks[i].y * h) 
                         for i in indices])
 
+
+    # Calculate Eye Aspect Ratio (EAR)
     def _calculate_ear(self, eye_points):
         p1, p2, p3, p4, p5, p6 = eye_points
         A = np.linalg.norm(p2 - p6)
@@ -204,6 +239,8 @@ class MediaPipeGazeTracking:
         C = np.linalg.norm(p1 - p4)
         return (A + B) / (2.0 * C)
 
+
+    # Check if the eye is blinking
     def is_blinking(self, current_time):
         if not self.landmarks:
             if current_time >= self.last_recorded_time + 0.05:
@@ -231,6 +268,9 @@ class MediaPipeGazeTracking:
             self.last_recorded_time = current_time
         
         return eye_state == "CLOSED" and self.frame_counter >= self.consec_frames
+
+
+
 
 # Main execution
 if __name__ == "__main__":
