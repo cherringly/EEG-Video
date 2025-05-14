@@ -1,0 +1,1 @@
+This suite allows for a quick calibration of BCI devices using a computer camera. The code uses object recognition and signal processing to recognize and validate presence of EMG, EOG and EEG in the signal, determining quickly level of readiness of the device.
