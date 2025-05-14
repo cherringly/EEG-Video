@@ -146,36 +146,36 @@ class MediaPipeGazeTracking:
 
         return frame
 
+if __name__ == "__main__":
+    # Main execution
+    cap = cv2.VideoCapture("video_recordings/alessandro.mov")
+    gaze = MediaPipeGazeTracking()
 
-# Main execution
-cap = cv2.VideoCapture("video_recordings/alessandro.mov")
-gaze = MediaPipeGazeTracking()
+    # Get video FPS to calculate timestamps
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    frame_count = 0
 
-# Get video FPS to calculate timestamps
-fps = cap.get(cv2.CAP_PROP_FPS)
-frame_count = 0
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
 
-while True:
-    ret, frame = cap.read()
-    if not ret:
-        break
+        # Calculate current time in seconds
+        current_time = frame_count / fps
+        frame_count += 1
 
-    # Calculate current time in seconds
-    current_time = frame_count / fps
-    frame_count += 1
+        gaze.refresh(frame)
+        frame = gaze.annotated_frame(current_time)
 
-    gaze.refresh(frame)
-    frame = gaze.annotated_frame(current_time)
+        # Update blink detection with current timestamp
+        gaze.is_blinking(current_time)
 
-    # Update blink detection with current timestamp
-    gaze.is_blinking(current_time)
+        cv2.imshow("Gaze Tracking", frame)
+        if cv2.waitKey(1) & 0xFF == 27:
+            break
 
-    cv2.imshow("Gaze Tracking", frame)
-    if cv2.waitKey(1) & 0xFF == 27:
-        break
+    cap.release()
+    cv2.destroyAllWindows()
 
-cap.release()
-cv2.destroyAllWindows()
-
-# Export data to CSV when finished
-gaze.export_to_csv()
+    # Export data to CSV when finished
+    gaze.export_to_csv()
