@@ -15,7 +15,10 @@ channel = 0 #channel number (change to 1 for matlab)
 fsBionode = 25e3 / 2  #sampling rate
 ADCres = 12 #if 12 bits, 2^12 = 4096
 window_sec = 10 #number of seconds for the viewing window
-window_size = 0.2 #window size for PSD calculation
+window_size = 1 #window size for PSD calculation 
+# 1/window_size = # Hz resolution for alpha band PSD
+# 1/0.2 = 5 Hz resolution; [0,5,10,15,...], but only 8-12 Hz is used, so only [10] Hz bin
+# 1/1 = 1 Hz resolution; [0,1,2,3,4,5,6,7,8,9,10,11,12,13,...], but only 8-12 Hz is used, so only [8,9,10,11,12] Hz bins
 step_sec = 0.02 #step size for PSD calculation
 blockPath = r"\Users\maryz\EEG-Video\bin_files\ear3.31.25_1.bin" #path to the bin file
 
@@ -42,6 +45,10 @@ def preprocess_eeg():
     sos_alpha = signal.butter(4, [8, 12], btype='bandpass', fs=fsBionode, output='sos')
     #sosfiltfilt is zero-phase filtering (no phase distortion so preserves timing)
     eeg_alpha = signal.sosfiltfilt(sos_alpha, rawCha[channel])
+    
+    print("Loaded EEG shape:", rawCha.shape)
+    print("Raw EEG preview:", rawCha[channel][:10])
+
     return rawCha[channel], eeg_alpha
 
 
@@ -61,6 +68,10 @@ def run_video():
 
     while cap.isOpened():
         ret, frame = cap.read()
+        print(f"[Video] Frame {frame_count}, Time: {current_time:.2f}s, Read successful: {ret}")
+        if frame is None or frame.sum() == 0:
+            print(f"[Video] Warning: Empty or black frame at count {frame_count}")
+
         if not ret:
             break
 
@@ -74,7 +85,8 @@ def run_video():
         
         # Only put new frame if queue is empty to prevent blocking
         if queue_frame.empty():
-            queue_frame.put(cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB))
+            print("[Video] Inserting frame into queue.")
+
 
     cap.release()
     gaze.export_to_csv()
@@ -135,6 +147,8 @@ def update(frame):
     
     # Update EEG data
     if idx + window_samples <= len(eeg_alpha):
+        print(f"[EEG] Update index: {idx}, Window samples: {window_samples}")
+
         # Raw EEG plot
         time_window = np.arange(idx, idx + window_samples) / fsBionode
         raw_segment = raw_eeg[idx:idx + window_samples]
@@ -171,6 +185,9 @@ def update(frame):
             ax_power.set_ylim(1e-10, max(1e-9, max(power_buffer)))
         
         index[0] += step_samples
+        print(f"[EEG] Alpha PSD freq range: {freqs[alpha_mask]}")
+        print(f"[EEG] Alpha Power: {alpha_power:.4e}")
+
     
     # Update video
     if not queue_frame.empty():
