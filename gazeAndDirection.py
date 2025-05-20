@@ -313,6 +313,12 @@ class MediaPipeGazeTracking:
             cv2.putText(frame, f"Gaze ratio: {gaze_ratio:.2f}", (50, y_pos), 
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 1)
 
+        # Mark pose and jaw analysis facial landmarks
+        pose_jaw_indices = [33, 263, 1, 61, 291, 199, 17, 0, 14]
+        for idx in pose_jaw_indices:
+            pt = self.landmarks[idx]
+            x, y = int(pt.x * w), int(pt.y * h)
+            cv2.circle(frame, (x, y), 4, (0, 255, 255), -1)  # Yellow for pose/jaw landmarks
         return frame
 
 if __name__ == "__main__":

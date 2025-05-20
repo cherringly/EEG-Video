@@ -60,36 +60,67 @@ queue_frame = Queue(maxsize=1)
 raw_eeg, eeg_alpha = preprocess_eeg()
 
 # VIDEO THREAD
+# --- Inside run_video() ---
 def run_video():
+    print("[Video] Starting video thread...")
+    
     cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        print(f"[Error] Could not open video file: {video_path}")
+        return
+
+    print(f"[Video] Successfully opened video: {video_path}")
+
     gaze = MediaPipeGazeTracking()
     fps = cap.get(cv2.CAP_PROP_FPS)
+    if fps == 0:
+        print("[Error] FPS is 0. Check if the video file is valid.")
+        return
+    print(f"[Video] FPS of video: {fps}")
+
     frame_count = 0
 
     while cap.isOpened():
         ret, frame = cap.read()
-        print(f"[Video] Frame {frame_count}, Time: {current_time:.2f}s, Read successful: {ret}")
-        if frame is None or frame.sum() == 0:
-            print(f"[Video] Warning: Empty or black frame at count {frame_count}")
-
         if not ret:
+            print(f"[Video] End of video or read error at frame {frame_count}.")
             break
 
-        frame = cv2.resize(frame, (960, 720))
+        print(f"[Video] Read frame {frame_count}")
+
+        try:
+            frame = cv2.resize(frame, (960, 720))
+        except Exception as e:
+            print(f"[Error] Resizing frame {frame_count} failed: {e}")
+            continue
+
         current_time = frame_count / fps
         frame_count += 1
 
-        gaze.refresh(frame)
-        gaze.is_blinking(current_time)
-        annotated = gaze.annotated_frame(current_time)
-        
-        # Only put new frame if queue is empty to prevent blocking
+        print(f"[Video] Processing frame at {current_time:.2f}s")
+
+        try:
+            gaze.refresh(frame)
+            gaze.is_blinking(current_time)
+            annotated = gaze.annotated_frame(current_time)
+        except Exception as e:
+            print(f"[Error] Gaze tracking failed on frame {frame_count}: {e}")
+            continue
+
         if queue_frame.empty():
-            print("[Video] Inserting frame into queue.")
+            try:
+                queue_frame.put(annotated)
+                print(f"[Video] Enqueued frame at {current_time:.2f}s")
+            except Exception as e:
+                print(f"[Error] Failed to enqueue frame: {e}")
 
-
+    print("[Video] Releasing video capture...")
     cap.release()
+    print("[Video] Exporting gaze data to CSV...")
     gaze.export_to_csv()
+    print("[Video] Finished processing video.")
+
+
 
 # EEG PLOT CONFIG
 window_samples = int(window_size * fsBionode) #0.2*12500 = 2,500 samples (num of data points for PSD)
@@ -175,14 +206,14 @@ def update(frame):
             ax_eeg.set_ylim(np.maximum(1e-10, np.min(psd[alpha_mask])), 
                           np.max(psd[alpha_mask]))
 
-            # Update power plot
-            alpha_power = simps(psd[alpha_mask], freqs[alpha_mask])
-            current_time = idx / fsBionode
-            power_buffer.append(alpha_power)
-            time_buffer.append(current_time)
-            power_line.set_data(time_buffer, power_buffer)
-            ax_power.set_xlim(max(0, current_time - window_sec), current_time)
-            ax_power.set_ylim(1e-10, max(1e-9, max(power_buffer)))
+        # Update power plot
+        alpha_power = simps(psd[alpha_mask], freqs[alpha_mask])
+        current_time = idx / fsBionode
+        power_buffer.append(alpha_power)
+        time_buffer.append(current_time)
+        power_line.set_data(time_buffer, power_buffer)
+        ax_power.set_xlim(max(0, current_time - window_sec), current_time)
+        ax_power.set_ylim(0, 10)  # <-- Set static Y-axis limits here (adjust as needed)
         
         index[0] += step_samples
         print(f"[EEG] Alpha PSD freq range: {freqs[alpha_mask]}")

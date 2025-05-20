@@ -4,77 +4,98 @@ from scipy import signal
 from scipy.integrate import simpson as simps
 from bionodebinopen import fn_BionodeBinOpen
 
-channel = 0
-ADCres = 12
-fsBionode = 5537 
-window_sec = 1
-blockPath = r"\Users\maryz\EEG-Video\bin_files\ear3.31.25_1.bin"
+def load_and_preprocess_data(block_path, adc_resolution, fs, channel):
+    # Load binary EEG data and scale to volts
+    data_dict = fn_BionodeBinOpen(block_path, adc_resolution, fs)
+    raw_data = np.array(data_dict['channelsData'])
+    raw_data = (raw_data - 2**11) * 1.8 / (2**12)  # Convert ADC values to volts
+    raw_data = np.nan_to_num(raw_data)  # Replace NaNs with zero
+    return raw_data[channel]  # Return data from specified channel
 
-data_dict = fn_BionodeBinOpen(blockPath, ADCres, fsBionode)
-rawCha = np.array(data_dict['channelsData'])
-rawCha = (rawCha - 2**11) * 1.8 / (2**12)
-rawCha = np.nan_to_num(rawCha)
+def print_data_stats(total_samples, fs):
+    # Print basic stats about the data
+    duration_sec = total_samples / fs
+    print(f"Total samples: {total_samples}")
+    print(f"Sampling rate: {fs} Hz")
+    print(f"Total duration: {duration_sec:.2f} seconds ({duration_sec/60:.2f} minutes)")
 
-total_samples = rawCha.shape[1]
-total_duration_sec = total_samples / fsBionode
-print(f"Total samples: {total_samples}")
-print(f"Sampling rate: {fsBionode} Hz")
-print(f"Total duration: {total_duration_sec:.2f} seconds ({total_duration_sec/60:.2f} minutes)")
+def bandpass_filter_alpha(data, fs):
+    # Bandpass filter for alpha frequency band (8-12 Hz)
+    sos_alpha = signal.butter(4, [8, 12], btype='bandpass', fs=fs, output='sos')
+    return signal.sosfiltfilt(sos_alpha, data)
 
-# band pass filter for alpha band (8-12 Hz)
-sos_alpha = signal.butter(4, [8, 12], btype='bandpass', fs=fsBionode, output='sos')
-eeg_alpha = signal.sosfiltfilt(sos_alpha, rawCha[channel])
+def compute_alpha_power(eeg_alpha, fs, window_sec):
+    # Compute power in alpha band over successive 1-second windows
+    window_samples = int(window_sec * fs)
+    total_samples = len(eeg_alpha)
+    n_windows = total_samples // window_samples
 
+    print(f"Window size (samples): {window_samples}")
+    print(f"Number of 1-second windows: {n_windows}")
 
-window_samples = int(window_sec * fsBionode) # number of samples in 1 second window
-n_windows = total_samples // window_samples # number of 1-second windows
-print(f"Window size (samples): {window_samples}")
-print(f"Number of 1-second windows: {n_windows}")
+    alpha_powers = []  # Alpha power per window
+    time_minutes = []  # Time stamp in minutes for each window
 
-alpha_powers = []
-time_minutes = []
+    for i in range(n_windows):
+        start = i * window_samples
+        end = start + window_samples
+        segment = eeg_alpha[start:end] * np.hanning(window_samples)  # Apply Hann window
 
-for i in range(n_windows):
-    start = i * window_samples
-    end = start + window_samples
-    segment = eeg_alpha[start:end] * np.hanning(window_samples)
+        freqs, psd = signal.welch(
+            segment,
+            fs=fs,
+            window='hann',
+            nperseg=window_samples,
+            noverlap=0,
+            scaling='density'
+        )
 
-    freqs, psd = signal.welch(
-        segment,
-        fs=fsBionode,
-        window='hann',
-        nperseg=window_samples,
-        noverlap=0,
-        scaling='density'
-    )
+        alpha_mask = (freqs >= 8) & (freqs <= 12)  # Indices for alpha band
+        alpha_power = simps(psd[alpha_mask], freqs[alpha_mask])
+        alpha_powers.append(alpha_power)  # In V² due to input scaling
+        time_minutes.append(i * window_sec / 60)
 
-    alpha_mask = (freqs >= 8) & (freqs <= 12)
-    alpha_power = simps(psd[alpha_mask], freqs[alpha_mask])
-    alpha_powers.append(alpha_power * 1e6)  # μV²
-    time_minutes.append(i * window_sec / 60)
+    return np.array(time_minutes), np.array(alpha_powers)
 
-print(f"First 5 time points (min): {time_minutes[:5]}")
-print(f"Last time point (min): {time_minutes[-1]:.2f}")
-print(f"Number of points: {len(time_minutes)}")
+def plot_alpha_power(time_minutes, alpha_powers):
+    # Plot alpha power over time and show per-minute average
+    plt.figure(figsize=(12, 6))
+    plt.plot(time_minutes, alpha_powers, color='green', label='Alpha Power')
 
-plt.figure(figsize=(12, 6))
-plt.plot(time_minutes, alpha_powers, color='green', label='Alpha Power')
+    total_minutes = int(time_minutes[-1]) + 1
+    for m in range(total_minutes):
+        idx = (time_minutes >= m) & (time_minutes < m + 1)
+        if np.any(idx):
+            avg_power = np.mean(alpha_powers[idx])  # Average alpha power for the minute
+            print(f"Minute {m}: Avg Alpha Power = {avg_power:.2e} V²")
+            plt.hlines(avg_power, m, m + 1, colors='blue', linestyles='dashed', linewidth=2, label='1-min Avg' if m == 0 else "")
 
-alpha_powers = np.array(alpha_powers) # alpha power in μV²
-time_minutes = np.array(time_minutes) # time in minutes
-total_minutes = int(time_minutes[-1]) + 1
+    plt.xlabel('Time (minutes)')
+    plt.ylabel('Alpha Power (V²)')
+    plt.title('Alpha Power Over Time (8–12 Hz)')
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
 
-# Loop through each minute and calculate the average power
-for m in range(total_minutes):
-    idx = (time_minutes >= m) & (time_minutes < m + 1) #
-    if np.any(idx):
-        avg_power = np.mean(alpha_powers[idx]) # average power in μV²
-        plt.hlines(avg_power, m, m + 1, colors='blue', linestyles='dashed', linewidth=2, label='1-min Avg' if m == 0 else "")
+def main():
+    channel = 1  # Channel index to analyze
+    ADCres = 12  # ADC resolution (bits)
+    fsBionode = 5537  # Sampling rate in Hz
+    window_sec = 1  # Window size in seconds
+    blockPath = r"\Users\maryz\EEG-Video\bin_files\ear3.31.25_1.bin"  # File path
 
-plt.xlabel('Time (minutes)')
-plt.ylabel('Alpha Power (μV²)')
-plt.title('Alpha Power Over Time (8–12 Hz)')
-plt.grid(True)
-plt.legend()
-plt.tight_layout()
-plt.show()
+    raw_channel_data = load_and_preprocess_data(blockPath, ADCres, fsBionode, channel)
+    print_data_stats(len(raw_channel_data), fsBionode)
+
+    eeg_alpha = bandpass_filter_alpha(raw_channel_data, fsBionode)
+    time_minutes, alpha_powers = compute_alpha_power(eeg_alpha, fsBionode, window_sec)
+
+    print(f"First 5 time points (min): {time_minutes[:5]}")
+    print(f"Last time point (min): {time_minutes[-1]:.2f}")
+    print(f"Number of points: {len(time_minutes)}")
+
+    plot_alpha_power(time_minutes, alpha_powers)
+
+if __name__ == "__main__":
+    main()
