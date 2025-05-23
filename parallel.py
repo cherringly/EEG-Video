@@ -1,118 +1,168 @@
 import numpy as np
-from offline_power import load_and_preprocess_data, bandpass_filter_alpha, compute_alpha_power
-from movement_track import MediaPipeGazeTracking
+import matplotlib.pyplot as plt
+from scipy import signal
+from scipy.integrate import simpson as simps
 import pandas as pd
-import cv2
-import mediapipe as mp
+from bionodebinopen import fn_BionodeBinOpen
 
-def compute_minute_alpha_stats(time_minutes, alpha_powers):
-    # calculate average alpha power for each minute
-    total_minutes = int(time_minutes[-1]) + 1 # total minutes in the data
-    minute_powers = []
-    for m in range(total_minutes):
-        idx = (time_minutes >= m) & (time_minutes < m + 1)
-        if np.any(idx):
-            avg_power = np.mean(alpha_powers[idx])  # mean alpha power for the current minute
-        else:
-            avg_power = np.nan
-        minute_powers.append(avg_power)
-    return np.array(minute_powers)
+def load_and_preprocess_data(block_path, adc_resolution, fs, channel):
+    data_dict = fn_BionodeBinOpen(block_path, adc_resolution, fs)
+    raw_data = np.array(data_dict['channelsData'])
+    scale_factor = 1.8 / 4096.0
+    raw_data = (raw_data - 2048) * scale_factor
+    raw_data = np.nan_to_num(raw_data)
+    return raw_data[channel]
 
-def compute_eye_state_vector_from_gaze_tracker(video_path, eye_csv_path):
-    # run gaze tracking to generate eye state CSV from video
-    cap = cv2.VideoCapture(video_path)
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    frame_count = 0
-    gaze_tracker = MediaPipeGazeTracking()
+def print_data_stats(total_samples, fs):
+    duration_sec = total_samples / fs
+    print(f"Total samples: {total_samples}")
+    print(f"Sampling rate: {fs} Hz")
+    print(f"Total duration: {duration_sec:.2f} seconds ({duration_sec/60:.2f} minutes)")
+    return duration_sec
 
-    with mp.solutions.face_mesh.FaceMesh(static_image_mode=False, max_num_faces=1, refine_landmarks=True) as face_mesh:
-        while cap.isOpened():
-            ret, frame = cap.read()
-            if not ret:
-                break
+def bandpass_filter_alpha(data, fs):
+    sos_bandpass = signal.butter(4, [0.1, 25], btype='bandpass', fs=fs, output='sos')
+    return signal.sosfiltfilt(sos_bandpass, data)
 
-            current_time = frame_count / fps
-            frame_count += 1
+def smooth_alpha_power(alpha_powers, fs, window_sec):
+    power_fs = 1 / window_sec
+    sos_low = signal.butter(4, 0.025, btype='lowpass', fs=power_fs, output='sos')
+    return signal.sosfiltfilt(sos_low, alpha_powers)
 
-            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            results = face_mesh.process(rgb)
+def compute_alpha_power(eeg_alpha, fs, window_sec):
+    window_samples = int(window_sec * fs)
+    total_samples = len(eeg_alpha)
+    n_windows = total_samples // window_samples
 
-            if results.multi_face_landmarks:
-                landmarks = results.multi_face_landmarks[0]
-                gaze_tracker.analyze(frame, landmarks.landmark, current_time)
-
-    cap.release()
-    gaze_tracker.export_to_csv(eye_csv_path)  # save eye states to CSV
-
-def compute_eye_state_vector(csv_path, window_sec):
-    # generate a vector of 1-second eye states (1=open, 0=closed)
-    df = pd.read_csv(csv_path)
-    duration = df['Timestamp (s)'].max()
-    n_windows = int(duration // window_sec)
-    eye_states = np.zeros(n_windows, dtype=int)
+    alpha_powers = []
+    time_minutes = []
 
     for i in range(n_windows):
-        start = i * window_sec
-        end = start + window_sec
-        window_data = df[(df['Timestamp (s)'] >= start) & (df['Timestamp (s)'] < end)]
-        closed_ratio = np.mean(window_data['Eye State'] == 'CLOSED') if not window_data.empty else 0
-        eye_states[i] = 0 if closed_ratio > 0.5 else 1  #mark as closed if >50% closed
-    return eye_states
+        start = i * window_samples
+        end = start + window_samples
+        segment = eeg_alpha[start:end] * np.hanning(window_samples)
 
-def classify_minute_eye_state(eye_states, window_sec):
-    #classify each minute as 'Open' or 'Closed' based on % of closed states
-    windows_per_minute = int(60 / window_sec)
-    n_minutes = len(eye_states) // windows_per_minute
-    minute_labels = []
-    for m in range(n_minutes):
-        start = m * windows_per_minute
-        end = start + windows_per_minute
-        minute_segment = eye_states[start:end]
-        closed_ratio = np.mean(minute_segment == 0)  # proportion of 1s marked as 'Closed'
-        label = 'Closed' if closed_ratio > 0.4 else 'Open'  #threshold to decide label
-        minute_labels.append(label)
-        print(f"Minute {m}: {label} (Closed Ratio: {closed_ratio:.2f})")
-    return minute_labels
+        freqs, psd = signal.welch(segment, fs=fs, window='hann', nperseg=window_samples, noverlap=0, scaling='density')
+        alpha_mask = (freqs >= 8) & (freqs <= 12)
+        alpha_power = simps(psd[alpha_mask], freqs[alpha_mask])
+        alpha_powers.append(alpha_power)
+        time_minutes.append(i * window_sec / 60)
 
-def detect_eeg(minute_eye_states, minute_alpha_powers):
-    #detect EEG pattern based on transition and alpha power change
+    return np.array(time_minutes), np.array(alpha_powers)
+
+def compute_eye_state_vector_events(csv_path):
+    MIN_EYE_CLOSED_FRAMES = 90
+    df = pd.read_csv(csv_path)
+    eye_states = df['Eye State'].values
+    timestamps = df['Timestamp (s)'].values
+
+    event_indices = []
+    i = 0
+    n = len(eye_states)
+
+    while i < n:
+        if eye_states[i] == 'CLOSED':
+            start = i
+            while i < n and eye_states[i] == 'CLOSED':
+                i += 1
+            closed_duration = i - start
+            if closed_duration >= MIN_EYE_CLOSED_FRAMES:
+                j = start
+                while (j + 1) < n:
+                    if eye_states[j] == 'OPEN' and eye_states[j+1] == 'OPEN':
+                        break
+                    else:
+                        closed_duration += 1
+                    j += 1
+                event_indices.append((start, j))
+                i = j
+        else:
+            i += 1
+
+    return event_indices, timestamps
+
+def compute_all_eye_events(eye_states, timestamps, closed_events, max_time):
+    all_events = []
+    n = len(eye_states)
+    last_idx = 0
+
+    for start, end in closed_events:
+        if timestamps[start] > timestamps[last_idx]:
+            all_events.append((timestamps[last_idx], timestamps[start], 'OPEN'))
+        all_events.append((timestamps[start], timestamps[end], 'CLOSED'))
+        last_idx = end
+
+    if timestamps[last_idx] < max_time:
+        all_events.append((timestamps[last_idx], max_time, 'OPEN'))
+
+    return all_events
+
+def compute_avg_alpha_for_events(alpha_powers, window_sec, all_events):
+    power_fs = 1 / window_sec
     results = []
-    for i in range(0, min(len(minute_eye_states), len(minute_alpha_powers)) - 1, 2):
-        cond_eye = (minute_eye_states[i] == 'Open') and (minute_eye_states[i+1] == 'Closed')
-        cond_power = (minute_alpha_powers[i] < minute_alpha_powers[i+1])
-        eeg_detected = cond_eye and cond_power
-        results.append(eeg_detected)
-        print(f"EEG DETECTED between minute {i} and {i+1}: {eeg_detected}")
+
+    for start_time, end_time, label in all_events:
+        idx_start = int(start_time * power_fs)
+        idx_end = int(end_time * power_fs)
+        if idx_start >= len(alpha_powers):
+            continue
+        if idx_end > len(alpha_powers):
+            idx_end = len(alpha_powers)
+        segment = alpha_powers[idx_start:idx_end]
+        if len(segment) == 0 or np.all(np.isnan(segment)):
+            continue
+        avg_power = np.nanmean(segment)
+        results.append((label, start_time, end_time, avg_power))
+
     return results
 
-def run_eeg_detection():
-    #main execution: load data, compute features, classify, and detect EEG
-    channel = 1  # EEG data channel
-    ADCres = 12  # ADC bit resolution
-    fs = 5537  # Sampling frequency in Hz
-    blockPath = r"\Users\maryz\EEG-Video\bin_files\ear3.31.25_1.bin"  # EEG binary file path
-    video_path = "video_recordings/alessandro.mov"  # video for eye tracking
-    eye_csv_path = "eye_state_log.csv"  # CSV to store gaze tracker results
-    window_sec = 1  # window size in seconds
+def plot_alpha_power(time_minutes, alpha_powers, smoothed_power=None, epoch_results=None):
+    plt.figure(figsize=(12, 6))
+    plt.plot(time_minutes, alpha_powers, color='green', alpha=0.5, label='Alpha Power (raw)')
+    if smoothed_power is not None:
+        plt.plot(time_minutes, smoothed_power, color='red', linewidth=2, label='Alpha Power (smoothed)')
 
-    # generate eye state data
-    compute_eye_state_vector_from_gaze_tracker(video_path, eye_csv_path)
+    if epoch_results is not None:
+        for i, (_, start, end, power) in enumerate(epoch_results):
+            t_min = start / 60
+            t_max = end / 60
+            plt.hlines(power, t_min, t_max, colors='blue', linestyles='dotted', linewidth=3, label='Epoch Avg' if i == 0 else None)
 
-    # compute alpha power features
-    raw = load_and_preprocess_data(blockPath, ADCres, fs, channel)
-    filtered = bandpass_filter_alpha(raw, fs)
-    time_min, alpha_powers = compute_alpha_power(filtered, fs, window_sec)
-    minute_alpha_powers = compute_minute_alpha_stats(time_min, alpha_powers)
+    plt.xlabel('Time (minutes)')
+    plt.ylabel('Alpha Power (V²)')
+    plt.yscale('log')
+    plt.title('Alpha Power Over Time (8–12 Hz)')
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
 
-    # compute and classify eye states
-    eye_states_1s = compute_eye_state_vector(eye_csv_path, window_sec)
-    minute_eye_states = classify_minute_eye_state(eye_states_1s, window_sec)
+def main():
+    channel = 1
+    ADCres = 12
+    fsBionode = 5537
+    window_sec = 1
+    blockPath = r"\Users\maryz\EEG-Video\bin_files\ear3.31.25_1.bin"
+    eye_csv = r"\Users\maryz\EEG-Video\eye_state_log.csv"
 
-    print("Minute Eye States:", minute_eye_states)
-    print("Minute Alpha Powers:", minute_alpha_powers)
+    raw_channel_data = load_and_preprocess_data(blockPath, ADCres, fsBionode, channel)
+    duration_sec = print_data_stats(len(raw_channel_data), fsBionode)
 
-    # detect EEG patterns
-    detect_eeg(minute_eye_states, minute_alpha_powers)
+    eeg_alpha = bandpass_filter_alpha(raw_channel_data, fsBionode)
+    time_minutes, alpha_powers = compute_alpha_power(eeg_alpha, fsBionode, window_sec)
+
+    smoothed_power = smooth_alpha_power(alpha_powers, fsBionode, window_sec)
+
+    closed_events, timestamps = compute_eye_state_vector_events(eye_csv)
+    df_eye = pd.read_csv(eye_csv)
+    all_events = compute_all_eye_events(df_eye['Eye State'].values, df_eye['Timestamp (s)'].values, closed_events, duration_sec)
+    results = compute_avg_alpha_for_events(alpha_powers, window_sec, all_events)
+
+    plot_alpha_power(time_minutes, alpha_powers, smoothed_power, epoch_results=results)
+
+    print("\nEpoch Avg Alpha Powers:")
+    for i, (label, start, end, power) in enumerate(results):
+        print(f"  Epoch {i+1}: {label} ({start:.1f}s - {end:.1f}s) = {power:.4f} V²")
 
 if __name__ == "__main__":
-    run_eeg_detection()
+    main()
