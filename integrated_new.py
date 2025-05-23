@@ -291,7 +291,7 @@ def run_video():
         if not ret:
             break
             
-        frame = cv2.resize(frame, (960, 720))  # Resize for display
+        frame = cv2.resize(frame, (960, 540))  # Resize for display
         current_time = frame_count / fps  # Calculate current video time
         video_frame_time[0] = current_time  # Update global time reference
         frame_count += 1
@@ -314,12 +314,13 @@ video_thread = Thread(target=run_video, daemon=True)
 video_thread.start()
 
 # === Plotting ===
-fig = plt.figure(figsize=(16, 8))
-gs = fig.add_gridspec(2, 2)  # 2 rows, 2 columns
+fig = plt.figure(figsize=(12, 6))
+gs = fig.add_gridspec(3, 2)  # 2 rows, 2 columns
 
 # Video subplot (top-left)
 ax_video = fig.add_subplot(gs[0, 0])
-video_image = ax_video.imshow(np.zeros((720, 960, 3), dtype=np.uint8))  # Blank image
+ax_video.set_aspect('auto')  # or 'equal' or 'box'
+video_image = ax_video.imshow(np.zeros((540, 960, 3), dtype=np.uint8))  # Blank image
 ax_video.axis('off')
 ax_video.set_title("Video Feed (Gaze Tracked)")
 
@@ -334,8 +335,9 @@ ax_eeg.grid(True)
 ax_eeg.set_xlim(0, window_sec)
 ax_eeg.set_ylim(-0.00007, 0.00007)  # Fixed y-axis for better visualization
 
+
 # Alpha power subplot (bottom full width)
-ax_alpha = fig.add_subplot(gs[1, :])
+ax_alpha = fig.add_subplot(gs[2, :])
 raw_line, = ax_alpha.plot([], [], label='Raw Alpha Power (V²)', color='green', alpha=0.5)
 smooth_line, = ax_alpha.plot([], [], label='Smoothed Alpha Power', color='red', linewidth=2)
 ax_alpha.set_xlabel('Time (s)')
@@ -345,6 +347,15 @@ ax_alpha.set_ylim(2,40)
 ax_alpha.set_title('Animated Alpha Power (20s Window)')
 ax_alpha.grid(True)
 ax_alpha.legend()
+
+
+# Face zoom subplot (bottom-left corner)
+ax_face = fig.add_subplot(gs[1, 0])  # Place in bottom-left quadrant
+ax_face.set_aspect('auto')  # or 'equal' or 'box'
+face_image = ax_face.imshow(np.zeros((40, 112, 3), dtype=np.uint8))  # Placeholder image
+ax_face.axis('off')
+ax_face.set_title("Zoomed-In Face")
+
 
 text_labels = []  # Stores text annotations for eye movement events
 
@@ -386,12 +397,13 @@ def init():
     """Initialize animation with empty plots"""
     line.set_data([], [])
     event_dots.set_data([], [])
-    video_image.set_array(np.zeros((720, 960, 3), dtype=np.uint8))
+    video_image.set_array(np.zeros((540, 960, 3), dtype=np.uint8))
     raw_line.set_data([], [])
     smooth_line.set_data([], [])
     ax_alpha.set_xlim(0, window_sec)
     ax_alpha.set_ylim(2,40)
-    return [line, event_dots, video_image, raw_line, smooth_line]
+    return [line, event_dots, video_image, raw_line, smooth_line, face_image]
+
 
 def update(_):
     """Update function called for each animation frame"""
@@ -448,10 +460,20 @@ def update(_):
     if not queue_frame.empty():
         frame = queue_frame.get()
         video_image.set_array(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))  # Convert BGR to RGB
+                # Extract and display zoomed-in face region
+        x1, y1, x2, y2 = 528, 230, 640, 270 #640-528=112, 270-230=40
+        face_crop = frame[y1:y2, x1:x2]
+        face_image.set_array(cv2.cvtColor(face_crop, cv2.COLOR_BGR2RGB))
+
+        #528, 324
+        #640, 324
+        #640, 350
+        #528, 350
+    
 
     print(f"Video Time: {current_time:.2f}s | EEG Window: {t_win[0]:.2f}s | Alpha Power Window: {t_start:.2f}-{t_end:.2f}s")
 
-    return [line, event_dots, video_image, raw_line, smooth_line] + text_labels
+    return [line, event_dots, video_image, raw_line, smooth_line, face_image] + text_labels
 
 def on_key(event):
     """Keyboard callback for pause/resume"""
