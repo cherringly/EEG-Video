@@ -4,7 +4,6 @@ from scipy import signal
 from scipy.integrate import simpson as simps
 import pandas as pd
 from bionodebinopen import fn_BionodeBinOpen
-from tdt import read_block
 
 def load_and_preprocess_data(block_path, adc_resolution, fs, channel):
     data_dict = fn_BionodeBinOpen(block_path, adc_resolution, fs)
@@ -31,9 +30,6 @@ def smooth_alpha_power(alpha_powers, fs, window_sec):
     return signal.sosfiltfilt(sos_low, alpha_powers)
 
 def compute_alpha_power(eeg_alpha, fs, window_sec):
-    # Before any segmentation or power calc
-    print(f"[DEBUG] Received eeg_alpha len={len(eeg_alpha)}, fs={fs}, window=1 sec")
-
     window_samples = int(window_sec * fs)
     total_samples = len(eeg_alpha)
     n_windows = total_samples // window_samples
@@ -122,21 +118,21 @@ def compute_avg_alpha_for_events(alpha_powers, window_sec, all_events):
 
 def plot_alpha_power(time_minutes, alpha_powers, smoothed_power=None, epoch_results=None):
     plt.figure(figsize=(12, 6))
-    plt.plot(time_minutes, alpha_powers, color="#5484bc", linewidth=2, label='Alpha Power (raw)')
+    plt.plot(time_minutes, alpha_powers, color='green', alpha=0.5, label='Alpha Power (raw)')
     if smoothed_power is not None:
-        plt.plot(time_minutes, smoothed_power, color='green', linewidth=3, label='Alpha Power (smoothed)')
+        plt.plot(time_minutes, smoothed_power, color='red', linewidth=2, label='Alpha Power (smoothed)')
 
     if epoch_results is not None:
         for i, (_, start, end, power) in enumerate(epoch_results):
             t_min = start / 60
             t_max = end / 60
-            plt.hlines(power, t_min, t_max, colors="#ffa200", linestyles='dotted', linewidth=5.5, label='Epoch Avg' if i == 0 else None)
+            plt.hlines(power, t_min, t_max, colors='blue', linestyles='dotted', linewidth=3, label='Epoch Avg' if i == 0 else None)
 
     plt.xlabel('Time (minutes)')
     plt.ylabel('Alpha Power (V²)')
     plt.yscale('log')
     plt.title('Alpha Power Over Time (8–12 Hz)')
-    # plt.grid(True)
+    plt.grid(True)
     plt.legend()
     plt.tight_layout()
     plt.show()
@@ -147,7 +143,7 @@ def main():
     fsBionode = 5537
     window_sec = 1
     blockPath = r"\Users\maryz\EEG-Video\bin_files\ear3.31.25_1.bin"
-    eye_csv = r"\Users\maryz\EEG-Video\esl_neuropulse.csv"
+    eye_csv = r"\Users\maryz\EEG-Video\eye_state_log.csv"
 
     raw_channel_data = load_and_preprocess_data(blockPath, ADCres, fsBionode, channel)
     duration_sec = print_data_stats(len(raw_channel_data), fsBionode)
@@ -167,40 +163,6 @@ def main():
     print("\nEpoch Avg Alpha Powers:")
     for i, (label, start, end, power) in enumerate(results):
         print(f"  Epoch {i+1}: {label} ({start:.1f}s - {end:.1f}s) = {power:.4f} V²")
-    
-    
-    # channel = 0
-    # ADCres = 12
-    # fsBionode = 12207
-    # window_sec = 2
-    # blockPath = r"\Users\maryz\EEG-Video\SubjectG-250331-160838"
-    # eye_csv = r"\Users\maryz\EEG-Video\esl_4.08.csv"
-
-    # # raw_channel_data = load_and_preprocess_data(blockPath, ADCres, fsBionode, channel)
-    # data = read_block(blockPath)
-    # raw = data.streams.EEGw.data
-    # # Convert to float32 and scale to volts
-    # rawC = raw[1:].astype(np.float32)
-    # # rawC = (rawC - 2048) * 1.8 / (2**ADCres * 1000)  # Scale to volts
-    # rawC = np.nan_to_num(rawC)
-    # rawCha = rawC[channel]
-    # duration_sec = print_data_stats(len(rawCha), fsBionode)
-
-    # eeg_alpha = bandpass_filter_alpha(rawCha, fsBionode)
-    # time_minutes, alpha_powers = compute_alpha_power(eeg_alpha, fsBionode, window_sec)
-
-    # smoothed_power = smooth_alpha_power(alpha_powers, fsBionode, window_sec)
-
-    # closed_events, timestamps = compute_eye_state_vector_events(eye_csv)
-    # df_eye = pd.read_csv(eye_csv)
-    # all_events = compute_all_eye_events(df_eye['Eye State'].values, df_eye['Timestamp (s)'].values, closed_events, duration_sec)
-    # results = compute_avg_alpha_for_events(alpha_powers, window_sec, all_events)
-
-    # plot_alpha_power(time_minutes, alpha_powers, smoothed_power, epoch_results=results)
-
-    # print("\nEpoch Avg Alpha Powers:")
-    # for i, (label, start, end, power) in enumerate(results):
-    #     print(f"  Epoch {i+1}: {label} ({start:.1f}s - {end:.1f}s) = {power:.4e} V²")
 
 if __name__ == "__main__":
     main()

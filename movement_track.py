@@ -188,7 +188,7 @@ class MediaPipeGazeTracking:
 
 if __name__ == "__main__":
     # open video file
-    cap = cv2.VideoCapture("video_recordings/alessandro.mov")
+    cap = cv2.VideoCapture("video_recordings/5.24_tdt_e.mp4")
     fps = cap.get(cv2.CAP_PROP_FPS)
     frame_count = 0
 
@@ -212,6 +212,7 @@ if __name__ == "__main__":
                 landmarks = results.multi_face_landmarks[0]
                 frame, pitch, yaw, roll, jaw_state = head_tracker.process(frame, landmarks)
                 frame = gaze_tracker.analyze(frame, landmarks.landmark, current_time)
+                gaze_tracker.export_to_csv()
             else:
                 cv2.putText(frame, "NO FACE DETECTED", (20, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
 

@@ -48,3 +48,28 @@ Pull latest annotated video frame from the queue_frame.
 
 
 
+## emg_detection.py
+### PURPOSE:
+Detects jaw and head movement events in a video, synchronizes them with EMG signals from a .bin file recorded using a Bionode EEG device, and evaluates whether EMG activity is present during these movements. Outputs CSV.
+
+### MAIN FUNCTIONS
+| Function                       | Description                                                 |
+| ------------------------------ | ----------------------------------------------------------- |
+| `load_emg_data()`              | Loads and scales EMG signal from binary file                |
+| `lowpass_filter_emg()`         | Filters EMG using 50 Hz lowpass filter                      |
+| `extract_movement_windows()`   | Uses MediaPipe + custom tracker to extract head/jaw motion  |
+| `detect_emg_during_movement()` | Checks if EMG activity occurs in specified movement windows |
+| `export_movement_csv()`        | Exports annotated movement+EMG events to CSV                |
+
+
+
+### DEPENDENCIES
+- numpy
+- csv
+- cv2
+- mediapipe
+- scipy
+- bionodeopen
+- movement_track
+
+

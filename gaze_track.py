@@ -179,3 +179,202 @@ if __name__ == "__main__":
 
     # Export data to CSV when finished
     gaze.export_to_csv()
+
+
+# emg_jaw_display.py
+
+# import time
+# import numpy as np
+# import cv2
+# import matplotlib.pyplot as plt
+# import matplotlib.animation as animation
+# from scipy.signal import butter, filtfilt
+# from threading import Thread
+# from queue import Queue, Full
+# from bionodebinopen import fn_BionodeBinOpen
+# from movement_track import HeadJawTracker
+
+# # === CONFIG ===
+# BLOCK_PATH = r"\Users\maryz\EEG-Video\bin_files\ear3.31.25_1.bin"
+# VIDEO_PATH = r"video_recordings/alessandro_edit.mp4"
+# ADC_RES = 12
+# FS = 5537
+# CHANNEL = 1
+# WINDOW_SEC = 10
+# EMG_YLIM = (-0.002, 0.002)
+# JAW_BOX_SIZE = 100  # size of zoomed jaw crop
+
+# paused = [False]
+# pause_start = None
+# t0_real = None
+# queue_frame = Queue(maxsize=2)
+# jaw_windows = []
+# drawn_jaw_idx = 0
+
+# # === Load & Filter EMG ===
+# data = fn_BionodeBinOpen(BLOCK_PATH, ADC_RES, FS)
+# raw = np.array(data['channelsData'])
+# scale = 1.8 / 4096.0 / 10000  # V per unit / gain
+# emg = (raw - 2048) * scale
+# emg = np.nan_to_num(emg[CHANNEL])
+# b, a = butter(4, 50 / (FS / 2), btype='low')
+# emg_filtered = filtfilt(b, a, emg)
+# time_arr = np.arange(len(emg_filtered)) / FS
+
+# # === Video Thread ===
+# def run_video():
+#     global jaw_windows, t0_real
+#     cap = cv2.VideoCapture(VIDEO_PATH)
+#     start_time = cap.get(cv2.CAP_PROP_POS_MSEC) / 1000.0
+#     tracker = HeadJawTracker()
+#     moving_jaw = False
+#     jaw_start = 0
+
+#     while cap.isOpened():
+#         if paused[0]:
+#             cv2.waitKey(1)
+#             continue
+
+#         ret, frame = cap.read()
+#         if not ret:
+#             break
+
+#         msec = cap.get(cv2.CAP_PROP_POS_MSEC) / 1000.0
+#         video_time = msec - start_time
+
+#         if t0_real is None:
+#             t0_real = time.time() - video_time
+#         delay = t0_real + video_time - time.time()
+#         if delay > 0:
+#             time.sleep(delay)
+
+#         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+#         results = tracker.face_mesh.process(rgb)
+
+#         if results.multi_face_landmarks:
+#             lm = results.multi_face_landmarks[0]
+#             tracker.process(frame, lm)  # updates calibration and landmarks
+#             annotated = tracker.annotated_frame(video_time)
+
+#             if not moving_jaw and tracker.jaw_state != "Neutral":
+#                 jaw_start = video_time
+#                 moving_jaw = True
+#             elif moving_jaw and tracker.jaw_state == "Neutral":
+#                 jaw_windows.append((jaw_start, video_time))
+#                 moving_jaw = False
+
+#             h, w, _ = annotated.shape
+#             lx, ly = int(lm.landmark[61].x * w), int(lm.landmark[61].y * h)
+#             x1, x2 = max(lx - JAW_BOX_SIZE, 0), min(lx + JAW_BOX_SIZE, w)
+#             y1, y2 = max(ly - JAW_BOX_SIZE, 0), min(ly + JAW_BOX_SIZE, h)
+#             jaw_crop = annotated[y1:y2, x1:x2]
+#             jaw_zoom = cv2.resize(jaw_crop, (240, 240))
+#         else:
+#             annotated = np.zeros((480, 640, 3), dtype=np.uint8)
+#             jaw_zoom = np.zeros((240, 240, 3), dtype=np.uint8)
+
+#         try:
+#             queue_frame.put_nowait((annotated, jaw_zoom, video_time))
+#         except Full:
+#             pass
+
+#     cap.release()
+
+# Thread(target=run_video, daemon=True).start()
+
+# # === Plot Setup ===
+# fig = plt.figure(figsize=(10, 5))
+# gs = fig.add_gridspec(2, 2, width_ratios=[1, 1.5])
+
+# ax_video = fig.add_subplot(gs[0, 0])
+# ax_video.axis('off')
+# img_disp = ax_video.imshow(np.zeros((480, 640, 3), dtype=np.uint8))
+# ax_video.set_title("Video Frame")
+
+# ax_zoom = fig.add_subplot(gs[1, 0])
+# ax_zoom.axis('off')
+# img_zoom = ax_zoom.imshow(np.zeros((240, 240, 3), dtype=np.uint8))
+# ax_zoom.set_title("Jaw Zoom")
+
+# ax_emg = fig.add_subplot(gs[:, 1])
+# line_emg, = ax_emg.plot([], [], lw=1, label="EMG")
+# ax_emg.set_xlabel("Time (s)")
+# ax_emg.set_ylabel("Voltage (V)")
+# ax_emg.set_ylim(EMG_YLIM)
+# ax_emg.grid(True)
+
+# highlighted = []
+
+# def init():
+#     line_emg.set_data([], [])
+#     return img_disp, img_zoom, line_emg
+
+# def update(_):
+#     global drawn_jaw_idx
+#     if paused[0] or queue_frame.empty():
+#         return img_disp, img_zoom, line_emg
+
+#     frame, zoom, vtime = queue_frame.get()
+#     img_disp.set_array(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+#     img_zoom.set_array(cv2.cvtColor(zoom, cv2.COLOR_BGR2RGB))
+
+#     t1 = vtime
+#     t0 = max(0, t1 - WINDOW_SEC)
+#     i0, i1 = int(t0 * FS), int(t1 * FS)
+#     if i1 > len(emg_filtered): return img_disp, img_zoom, line_emg
+
+#     t_win = time_arr[i0:i1]
+#     y_win = emg_filtered[i0:i1]
+#     line_emg.set_data(t_win, y_win)
+#     ax_emg.set_xlim(t0, t1)
+
+#     for span in highlighted:
+#         span.remove()
+#     highlighted.clear()
+
+#     for start, end in jaw_windows[drawn_jaw_idx:]:
+#         if start > t1: break
+#         if end < t0: continue
+#         shaded = ax_emg.axvspan(max(start, t0), min(end, t1), color='orange', alpha=0.3, label='Jaw Active')
+#         highlighted.append(shaded)
+#     drawn_jaw_idx = len(jaw_windows)
+
+#     return img_disp, img_zoom, line_emg
+
+# def on_key(event):
+#     global pause_start, t0_real
+#     if event.key == ' ':
+#         paused[0] = not paused[0]
+#         if paused[0]:
+#             pause_start = time.time()
+#         else:
+#             t0_real += time.time() - pause_start
+
+# def plot_static_first_minute():
+#     fig, ax = plt.subplots(figsize=(12, 4))
+#     i1 = int(60 * FS)
+#     t = time_arr[:i1]
+#     y = emg_filtered[:i1]
+#     ax.plot(t, y, lw=1, label='EMG')
+#     ax.set_xlim(0, 60)
+#     ax.set_ylim(EMG_YLIM)
+#     ax.set_xlabel('Time (s)')
+#     ax.set_ylabel('Voltage (V)')
+#     ax.set_title('First Minute EMG with Jaw Activity Highlighted')
+#     ax.grid(True)
+
+#     for start, end in jaw_windows:
+#         if end < 0: continue
+#         if start > 60: break
+#         ax.axvspan(max(start, 0), min(end, 60), color='orange', alpha=0.3)
+
+#     plt.tight_layout()
+#     plt.show()
+
+# fig.canvas.mpl_connect('key_press_event', on_key)
+# ani = animation.FuncAnimation(fig, update, init_func=init, interval=20, blit=False)
+
+# plt.tight_layout()
+# plt.show()
+
+# plot_static_first_minute()
