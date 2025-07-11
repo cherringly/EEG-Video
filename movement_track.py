@@ -1,3 +1,28 @@
+"""
+Head and Eye Movement Tracker Helper Module
+
+Tracks head pose (pitch, yaw, roll) and jaw position, as well as eye state (open/closed) using MediaPipe's face mesh.
+Used by standalone video analysis scripts or integrated into `emg_detection.py`.
+
+Key functions:
+- `HeadJawTracker.process()`: Computes calibrated head rotation and jaw state from facial landmarks
+- `HeadJawTracker.get_landmark_points()`: Extracts 2D and 3D facial landmarks for head pose estimation
+- `HeadJawTracker.get_jaw_state()`: Determines jaw state based on distance between top and bottom lip
+- `HeadJawTracker.get_head_rotation()`: Calculates head rotation angles using solvePnP
+- `MediaPipeGazeTracking.get_eye_points()`: Extracts eye landmarks from face mesh
+- `MediaPipeGazeTracking.calculate_ear()`: Computes eye aspect ratio (EAR)
+- `MediaPipeGazeTracking.analyze()`: Computes eye aspect ratio (EAR) and detects blinks
+- `MediaPipeGazeTracking.export_to_csv()`: Saves time-aligned blink/eye state data for post-hoc analysis
+
+Dependencies:
+- OpenCV (cv2)
+- MediaPipe
+- NumPy
+- pandas
+- matplotlib (optional, for result visualization)
+"""
+
+
 import cv2
 import mediapipe as mp
 import numpy as np

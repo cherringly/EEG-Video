@@ -1,3 +1,5 @@
+
+
 import time
 import numpy as np
 import cv2
@@ -8,22 +10,17 @@ from threading import Thread
 from queue import Queue, Full
 from bionodebinopen import fn_BionodeBinOpen
 from movement_track import HeadJawTracker
-from tdt import read_block
 
-# === CONFIG ===
-# BLOCK_PATH_NEUROPULSE = r"\Users\maryz\EEG-Video\bin_files\ear3.31.25_1.bin"
-BLOCK_PATH_TDT = r"\Users\maryz\EEG-Video\SubjectG-250331-160838"
-VIDEO_PATH = r"video_recordings/4.08_tdt_e.mp4"
+# === CONFIGURATION AND CONSTANTS ===
+BLOCK_PATH_NEUROPULSE = r"\Users\maryz\EEG-Video\bin_files\ear3.31.25_1.bin"
+VIDEO_PATH = r"video_recordings/alessandro_edit.mp4" #TODO: add try and catch for if video not found (rn shows black screen)
 ADC_RES = 12
-TDT_FS = 12207
-# FS = 5537
-CHANNEL = 1
-WINDOW_SEC = 10
-EMG_YLIM = (-0.0002, 0.0002) #only for tdt
+FS = 5537
+CHANNEL = 0
+WINDOW_SEC = 5
+EMG_YLIM = (-0.01, 0.01)
 JAW_BOX_SIZE = 120  # size of zoomed jaw crop
-VIDEO_OFFSET = 1
-# 2.2 for 3.52
-# 4.5 for 4.08
+VIDEO_OFFSET = 0
 
 paused = [False]
 pause_start = None
@@ -33,40 +30,35 @@ jaw_windows = []
 drawn_jaw_idx = 0
 
 # === Load & Filter EMG ===
-# neuropulse data processing
-# data = fn_BionodeBinOpen(BLOCK_PATH_NEUROPULSE, ADC_RES, FS)
-# raw = np.array(data['channelsData'])
-# scale = 1.8 / 4096.0 / 10000  # V per unit / gain
-# emg = (raw - 2048) * scale
-# rawCha = np.nan_to_num(emg[CHANNEL])
+data = fn_BionodeBinOpen(BLOCK_PATH_NEUROPULSE, ADC_RES, FS)
+raw = np.array(data['channelsData'])
+scale = 1.8 / 4096.0 / 10000  # V per unit / gain
+# scale = 1
+
+raw = (raw - 2048) * scale
+rawCha = np.nan_to_num(raw[CHANNEL])
+
+# # Plot rawCha for testing
+# plt.plot(rawCha)
+# plt.ylim(-0.01, 0.01)
+# plt.title("Unfiltered rawCha (potential EMG)")
+# plt.show()
 
 
-# TDT data processing
-data = read_block(BLOCK_PATH_TDT)
-raw = data.streams.EEGw.data
-rawC = raw[1:].astype(np.float32)
-# rawC = (rawC - 2048) * 1.8 / (2**ADCres * 1000)  # Scale to volts
-rawC = np.nan_to_num(rawC)
-rawCha = rawC[CHANNEL]
 
-b, a = butter(4, 150 / (TDT_FS / 2), btype='low')
-emg_filtered = filtfilt(b, a, rawCha)
+def butter_bandpass_filter(data, lowcut, highcut, fs, order=6):
+    nyq = 0.5 * fs
+    low = lowcut / nyq
+    high = highcut / nyq
 
+    sos = butter(order, [low, high], btype='band', output='sos')
+    y = sosfiltfilt(sos, data)
+    return y
+emg_filtered = butter_bandpass_filter(rawCha, 0.1, 50, FS)
+# emg_filtered = butter_bandpass_filter(rawCha, 20, 450, FS)
 
-# b,a = butter(4, [0.1, 50], btype='bandpass', fs=TDT_FS)
-# emg_filtered = filtfilt(b, a, rawCha)
-
-# def butter_bandpass_filter(data, lowcut, highcut, fs, order=6):
-#     nyq = 0.5 * fs
-#     low = lowcut / nyq
-#     high = highcut / nyq
-
-#     sos = butter(order, [low, high], btype='band', output='sos')
-#     y = sosfiltfilt(sos, data)
-#     return y
-# emg_filtered = butter_bandpass_filter(rawCha, 0.1, 50, FS)
-time_arr = np.arange(len(emg_filtered)) / TDT_FS
-print(f"EMG data loaded: {len(emg_filtered)} samples, {len(emg_filtered) / TDT_FS:.2f} seconds")
+time_arr = np.arange(len(emg_filtered)) / FS
+print(f"EMG data loaded: {len(emg_filtered)} samples, {len(emg_filtered) / FS:.2f} seconds")
 print(f"EMG filtered range: min={np.min(emg_filtered):.2e}, max={np.max(emg_filtered):.2e}")
 print(f"EMG filtered random: {emg_filtered[550:560]}")
 print(np.isnan(raw).any(), np.isnan(rawCha).any())
@@ -120,7 +112,6 @@ def run_video():
             x1, x2 = max(cx - JAW_BOX_SIZE, 0), min(cx + JAW_BOX_SIZE, w)
             y1, y2 = max(cy - JAW_BOX_SIZE, 0), min(cy + JAW_BOX_SIZE, h)
             jaw_crop = frame[y1:y2, x1:x2]
-            # for idx in [0, 14, 17, 61, 310]:
             for idx in [127, 93, 113, 58, 172, 136, 150, 149, 176, 148, 152,
                         377, 400, 378, 379, 365, 397, 367, 435, 366, 447, 356,
                         134, 131, 203, 206, 216, 212,
@@ -162,11 +153,11 @@ ax_zoom.axis('off')
 img_zoom = ax_zoom.imshow(np.zeros((240, 240, 3), dtype=np.uint8))
 ax_zoom.set_title("Jaw Zoom")
 
+
 ax_emg = fig.add_subplot(gs[:, 1])
-line_emg, = ax_emg.plot([], [], lw=2, label="EMG")
+line_emg, = ax_emg.plot([], [], lw=2, label="EMG",color="blue",alpha=0.7)
 ax_emg.set_xlabel("Time (s)")
 ax_emg.set_ylabel("Voltage (V)")
-# ax_emg.set_ylim(-0.01, 0.01)  # Adjusted for better visibility
 ax_emg.set_ylim(EMG_YLIM)
 # ax_emg.grid(True)
 
@@ -187,7 +178,7 @@ def update(_):
 
     t1 = vtime
     t0 = max(0, t1 - WINDOW_SEC)
-    i0, i1 = int(t0 * TDT_FS), int(t1 * TDT_FS)
+    i0, i1 = int(t0 * FS), int(t1 * FS)
     if i1 > len(emg_filtered): return img_disp, img_zoom, line_emg
 
     t_win = time_arr[i0:i1]
@@ -198,7 +189,7 @@ def update(_):
     for start, end in jaw_windows[drawn_jaw_idx:]:
         if start > t1: break
         if end < t0: continue
-        shaded = ax_emg.axvspan(max(start, t0), min(end, t1), color='orange', alpha=0.3, label='Jaw Active')
+        shaded = ax_emg.axvspan(max(start, t0), min(end, t1), color='blue', alpha=0.5, label='Jaw Active')
         highlighted.append(shaded)
     drawn_jaw_idx = len(jaw_windows)
 
@@ -216,15 +207,15 @@ def on_key(event):
 def plot_static():
     fig, ax = plt.subplots(figsize=(12, 4))
     
-    start_sec = 120
-    end_sec = 155
-    i0 = int(start_sec * TDT_FS)
-    i1 = int(end_sec * TDT_FS)
+    start_sec = 0
+    end_sec = 600
+    i0 = int(start_sec * FS)
+    i1 = int(end_sec * FS)
     
     t = time_arr[i0:i1]
     y = emg_filtered[i0:i1]
     
-    ax.plot(t, y, lw=3, color="black", label='EMG')
+    ax.plot(t, y, lw=0.5, color="black", label='EMG')
     ax.set_xlim(start_sec, end_sec)
     ax.set_ylim(EMG_YLIM)
     ax.set_xlabel('Time (s)')
@@ -263,4 +254,14 @@ def print_emg_summary():
     print(f"TOTAL: {int(total_duration)} seconds - EMG")
 
 print_emg_summary()
+
+# TODO:
+# - add a function to skip to a certain time in the video 
+#   (rn you have to watch a couple minutes to find EMG)
+# X make the plot static function less thick 
+# - the EMG is not visible in the live plotting for some reason rn
+
+
+
+
 

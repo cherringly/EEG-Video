@@ -1,3 +1,23 @@
+"""
+Bionode Bin Open Helper Module
+
+Parses raw .bin files recorded by the Bionode system and unpacks interleaved 12-bit ADC data 
+into channel-wise arrays with time vectors. Used by EEG processing scripts such as 
+`parallel.py` and `integrated_new.py`.
+
+Key functionality:
+- Reads and parses binary header and data packets from .bin files
+- Unpacks compressed 12-bit ADC data into usable 16-bit numpy arrays
+- Generates a time vector synchronized with the sample rate
+- Optionally previews loaded data via matplotlib (when run directly)
+
+Dependencies:
+- numpy
+- matplotlib
+- datetime
+"""
+
+
 from datetime import datetime
 import numpy as np
 import matplotlib.pyplot as plt

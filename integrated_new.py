@@ -1,4 +1,23 @@
-# eeg_gaze_alpha_plot.py
+"""
+EEG-Video Sync & Visualization Script
+
+Synchronizes EEG alpha power data with a gaze-tracked video using a shared timeline.
+It visualizes:
+- The raw and smoothed alpha power (8–12 Hz) over time
+- Filtered EEG signals with annotated eye movement artifacts
+- Gaze-tracked video with open/closed eye detection
+
+Dependencies: numpy, scipy, cv2, queue, matplotlib, bionodebinopen
+- `parallel.py`: for alpha power preprocessing pipeline
+- `gaze_track.py`: for MediaPipe-based eye state detection
+- `bionodebinopen.py`: for decoding raw EEG .bin files
+
+Key functionality:
+- Load EEG and video from specified paths
+- Animate over time with matplotlib: EEG on the right, alpha on bottom, video on top-left
+- Eye movements detected in EEG are overlaid in real time
+- Press the spacebar to pause/resume playback
+"""
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -30,28 +49,43 @@ video_path = "video_recordings/alessandro_edit.mp4"
 paused = [False]
 video_frame_time = [0.0]  # Used as unified timeline anchor
 
+
+
 # === Load and preprocess EEG ===
 data = fn_BionodeBinOpen(filename, ADCres, fsBionode)
 rawCha = data["channelsData"].astype(np.float32)
+raw_data = (rawCha - 2048) * (1.8 / 4096.0)
+raw_data = np.nan_to_num(raw_data)
+
+
+# Convert raw ADC values to voltages (based on 12-bit resolution and 1.8V range)
 rawCha = (rawCha - 2**11) * 1.8 / (2**12 * 1000)
-highCutoff = 60
-b, a = butter(4, highCutoff / (fsBionode / 2), btype='low')
-filtered = filtfilt(b, a, rawCha[channel])
-time = np.arange(len(filtered)) / fsBionode
+
+# Apply low-pass filter to remove high-frequency noise (e.g., >60 Hz)
+b, a = butter(4, 60 / (fsBionode / 2), btype='low')
+filtered = filtfilt(b, a, rawCha[channel]) # Clean EEG signal
+time = np.arange(len(filtered)) / fsBionode # Time vector in seconds
 
 # === Alpha Power Computation ===
-raw_channel_data = load_and_preprocess_data(blockPath, ADCres, fsBionode, channel)
+# Compute alpha-band power (8–12 Hz) using parallel pipeline
+# raw_channel_data = load_and_preprocess_data(blockPath, ADCres, fsBionode, channel)
+raw_channel_data = raw_data[channel]
 duration_sec = print_data_stats(len(raw_channel_data), fsBionode)
 eeg_alpha = bandpass_filter_alpha(raw_channel_data, fsBionode)
 time_min, alpha_power = compute_alpha_power(eeg_alpha, fsBionode, 1)
 smoothed_power = smooth_alpha_power(alpha_power, fsBionode, 1)
-time_sec_alpha = time_min * 60
+time_sec_alpha = time_min * 60 # Convert time vector to seconds
 
 # === Video frame queue ===
 queue_frame = Queue(maxsize=1)
 
 # === Launch video processing in separate thread ===
 def run_video():
+    """Launches a video capture thread with gaze tracking (None).
+
+    Captures video from a given path, processes each frame to detect gaze and blinking,
+    and places annotated frames in a queue for visualization. Also syncs video time with EEG display.
+    """
     cap = cv2.VideoCapture(video_path)
     gaze = MediaPipeGazeTracking()
     fps = cap.get(cv2.CAP_PROP_FPS)
@@ -63,18 +97,22 @@ def run_video():
         ret, frame = cap.read()
         if not ret:
             break
-        frame = cv2.resize(frame, (960, 720))
+        frame = cv2.resize(frame, (960, 720)) # Resize for consistent display
         current_time = frame_count / fps
-        video_frame_time[0] = current_time  # Sync time anchor
+        video_frame_time[0] = current_time   # Global time sync point
         frame_count += 1
-        gaze.refresh(frame)
-        gaze.is_blinking(current_time)
-        annotated = gaze.annotated_frame(current_time)
+        
+        gaze.refresh(frame)  # Run face/gaze detection
+        gaze.is_blinking(current_time) 
+        annotated = gaze.annotated_frame(current_time) # Annotate blinking
+        
+        # Update video frame queue for animation
         if queue_frame.empty():
             queue_frame.put(annotated)
-        cv2.waitKey(1)
+        cv2.waitKey(1) # Prevents GUI freeze 
+
     cap.release()
-    gaze.export_to_csv()
+    # gaze.export_to_csv() # Save tracking data to file
 
 video_thread = Thread(target=run_video, daemon=True)
 video_thread.start()
@@ -110,10 +148,22 @@ ax_alpha.legend()
 
 text_labels = []
 
+# Detects rapid eye movement spikes in EEG window (list of tuples).
 def detect_eye_movements(y_win, t_win):
-    threshold_spike = 0.0005
-    threshold_dip = -0.0001
-    max_gap_sec = 0.12
+    """Detects rapid eye movement spikes in EEG window (list of tuples).
+
+    y_win: np.ndarray
+        EEG signal values in a moving window.
+    t_win: np.ndarray
+        Corresponding timestamps for y_win samples.
+
+    Returns:
+        events: list of tuples
+            List of (time, voltage) pairs representing detected eye movement events.
+    """
+    threshold_spike = 0.0005 # Voltage threshold for upward spike
+    threshold_dip = -0.0001 # Follow-up negative dip threshold
+    max_gap_sec = 0.12 # Max time between spike/dip
     max_gap_samples = int(max_gap_sec * fsBionode)
     events = []
     i = 0
@@ -132,6 +182,15 @@ def detect_eye_movements(y_win, t_win):
     return events
 
 def init():
+    """Initializes empty plots for animation setup (list).
+
+    Clears and resets all animation objects: EEG line, event dots, video image, alpha power lines.
+
+    No parameters.
+    Returns:
+        list
+            Updated plot elements to initialize the animation.
+    """
     line.set_data([], [])
     event_dots.set_data([], [])
     video_image.set_array(np.zeros((480, 853, 3), dtype=np.uint8))
@@ -142,6 +201,15 @@ def init():
     return [line, event_dots, video_image, raw_line, smooth_line]
 
 def update(_):
+    """Animation update function that refreshes plots with current video and EEG data (list).
+
+    _: int
+        Frame index passed by matplotlib animation system (unused).
+
+    Returns:
+        list
+            Updated plot elements for EEG, alpha power, and video frame.
+    """
     global text_labels
     if paused[0]:
         return [line, event_dots, video_image, raw_line, smooth_line] + text_labels
@@ -159,7 +227,7 @@ def update(_):
         line.set_data(t_win_relative, y_win)
         ax_eeg.set_title(f"Filtered EEG ({t_win[0]:.1f}s - {t_win[-1]:.1f}s)")
 
-
+        # Detect and plot eye movement events
         events = detect_eye_movements(y_win, t_win)
         t_events, y_events = [], []
         if events:
@@ -203,6 +271,14 @@ def update(_):
     return [line, event_dots, video_image, raw_line, smooth_line] + text_labels
 
 def on_key(event):
+    """Handles keypress events to pause/resume the animation (None).
+
+    event: matplotlib.backend_bases.KeyEvent
+        The keyboard event triggered by user input.
+
+    Returns:
+        None
+    """
     if event.key == ' ':
         paused[0] = not paused[0]
         print("Paused" if paused[0] else "Resumed")

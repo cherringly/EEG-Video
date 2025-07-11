@@ -1,3 +1,19 @@
+"""
+MediaPipeGazeTracking Helper Module
+
+Provides real-time eye state detection using MediaPipe FaceMesh and 
+Eye Aspect Ratio (EAR) to identify blinks and eye closures. It logs eye state 
+events (OPEN, CLOSED, NO FACE) with timestamps and EAR values for each frame. 
+Supporting `parallel.py` in visualizing and comparing eye OPEN/CLOSED 
+events alongside EEG alpha power in static plots.
+
+Key functionality:
+- EAR calculation from facial landmarks
+- Blink detection logic
+- Eye state annotation on frames
+- Eye state history logging and CSV export
+"""
+
 import cv2
 import mediapipe as mp
 import numpy as np
@@ -5,7 +21,15 @@ import pandas as pd
 from datetime import timedelta
 
 class MediaPipeGazeTracking:
+    """
+    Class for detecting eye landmarks, calculating Eye Aspect Ratio (EAR),
+    detecting blinks, and exporting eye state logs using MediaPipe FaceMesh.
+    """
     def __init__(self):
+        """
+        Initializes the MediaPipe face mesh and sets up parameters for
+        blink detection and eye landmark tracking.
+        """
         self.frame = None
         self.face_mesh = mp.solutions.face_mesh.FaceMesh(
             static_image_mode=False,
@@ -26,7 +50,14 @@ class MediaPipeGazeTracking:
         self.eye_state_history = []  # To store eye state and timestamps for CSV export
         self.last_recorded_time = -0.05  # Initialize to ensure first frame is recorded
 
+
     def refresh(self, frame):
+        """
+        Processes a new video frame to update facial landmarks.
+
+        Parameters:
+            frame (np.ndarray): A BGR image from OpenCV
+        """
         self.frame = frame
         self.landmarks = None
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -35,13 +66,30 @@ class MediaPipeGazeTracking:
             self.landmarks = results.multi_face_landmarks[0].landmark
 
     def _get_eye_points(self, indices):
-        """Convert landmarks to numpy array of eye points"""
+        """
+        Convert facial landmarks into pixel coordinates for a given eye.
+
+        Parameters:
+            indices (List[int]): Landmark indices for an eye
+
+        Returns:
+            np.ndarray: Eye points in pixel coordinates
+        """
         h, w = self.frame.shape[:2]
         return np.array([(self.landmarks[i].x * w, self.landmarks[i].y * h) 
                         for i in indices])
 
+
     def _calculate_ear(self, eye_points):
-        """Calculate Eye Aspect Ratio for given eye landmarks"""
+        """
+        Calculate Eye Aspect Ratio (EAR) from 6 eye landmark points.
+
+        Parameters:
+            eye_points (np.ndarray): Array of six (x, y) eye landmark points
+
+        Returns:
+            float: Calculated EAR value
+        """
         # Extract the six points from the eye landmarks
         p1, p2, p3, p4, p5, p6 = eye_points
         
@@ -56,8 +104,18 @@ class MediaPipeGazeTracking:
         ear = (A + B) / (2.0 * C)
         return ear
 
+
     def is_blinking(self, current_time):
-        """Detect blink using Eye Aspect Ratio (EAR)"""
+        """
+        Determines if the subject is blinking based on current EAR value.
+        Updates internal blink count and eye state history.
+
+        Parameters:
+            current_time (float): Current time in seconds (from video timestamp)
+
+        Returns:
+            bool: True if a blink is detected, False otherwise
+        """
         if not self.landmarks:
             if current_time >= self.last_recorded_time + 0.05:
                 self.eye_state_history.append((current_time, "NO FACE", np.nan))
@@ -92,13 +150,31 @@ class MediaPipeGazeTracking:
         
         return eye_state == "CLOSED" and self.frame_counter >= self.consec_frames
 
+
+
     def export_to_csv(self, filename="eye_state_log.csv"):
-        """Export eye state history to CSV file"""
+        """
+        Saves the recorded eye state data to a CSV file.
+
+        Parameters:
+            filename (str): Output filename for CSV export (default: 'eye_state_log.csv')
+        """
         df = pd.DataFrame(self.eye_state_history, columns=["Timestamp (s)", "Eye State", "EAR Value"])
         df.to_csv(filename, index=False)
         print(f"Eye state data exported to {filename}")
 
+
+
     def annotated_frame(self, current_time):
+        """
+        Returns the current video frame with eye landmarks and state annotations.
+
+        Parameters:
+            current_time (float): Current time in seconds
+
+        Returns:
+            np.ndarray: Annotated video frame with eye state and EAR info
+        """
         if not self.landmarks:
             frame = self.frame.copy()
             cv2.putText(frame, "NO FACE DETECTED", (50, 50), 
