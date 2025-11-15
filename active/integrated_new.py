@@ -32,7 +32,7 @@ import cv2
 from threading import Thread
 from queue import Queue
 from gaze_track import MediaPipeGazeTracking
-from parallel import (
+from active.parallel import (
     load_and_preprocess_data,
     print_data_stats,
     bandpass_filter_alpha,
