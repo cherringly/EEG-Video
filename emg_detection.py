@@ -9,7 +9,7 @@ from scipy.signal import butter, filtfilt, sosfiltfilt
 from threading import Thread
 from queue import Queue, Full
 from active.bionodebinopen import fn_BionodeBinOpen
-from movement_track import HeadJawTracker
+from active.movement_track import HeadJawTracker
 
 # === CONFIGURATION AND CONSTANTS ===
 BLOCK_PATH_NEUROPULSE = r"\Users\maryz\EEG-Video\bin_files\ear3.31.25_1.bin"
