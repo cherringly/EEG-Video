@@ -393,7 +393,7 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
-from bionodebinopen import fn_BionodeBinOpen
+from active.bionodebinopen import fn_BionodeBinOpen
 
 def load_and_preprocess_data(block_path, adc_resolution, fs, channel):
     # Load binary EEG data and scale to volts

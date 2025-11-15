@@ -1,16 +1,19 @@
 """
 EEG-Video Sync & Visualization Script
 
+
 Synchronizes EEG alpha power data with a gaze-tracked video using a shared timeline.
 It visualizes:
 - The raw and smoothed alpha power (8–12 Hz) over time
 - Filtered EEG signals with annotated eye movement artifacts
 - Gaze-tracked video with open/closed eye detection
 
+
 Dependencies: numpy, scipy, cv2, queue, matplotlib, bionodebinopen
 - `parallel.py`: for alpha power preprocessing pipeline
 - `gaze_track.py`: for MediaPipe-based eye state detection
 - `bionodebinopen.py`: for decoding raw EEG .bin files
+
 
 Key functionality:
 - Load EEG and video from specified paths
@@ -18,6 +21,7 @@ Key functionality:
 - Eye movements detected in EEG are overlaid in real time
 - Press the spacebar to pause/resume playback
 """
+
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -36,6 +40,7 @@ from parallel import (
     smooth_alpha_power
 )
 
+
 # === CONFIG ===
 filename = blockPath = r"\Users\maryz\EEG-Video\bin_files\ear3.31.25_1.bin"
 ADCres = 12
@@ -45,9 +50,13 @@ window_sec = 20
 step_sec = 0.02
 video_path = "video_recordings/alessandro_edit.mp4"
 
+
 # === Pause flag ===
 paused = [False]
 video_frame_time = [0.0]  # Used as unified timeline anchor
+
+
+
 
 
 
@@ -58,13 +67,17 @@ raw_data = (rawCha - 2048) * (1.8 / 4096.0)
 raw_data = np.nan_to_num(raw_data)
 
 
+
+
 # Convert raw ADC values to voltages (based on 12-bit resolution and 1.8V range)
 rawCha = (rawCha - 2**11) * 1.8 / (2**12 * 1000)
+
 
 # Apply low-pass filter to remove high-frequency noise (e.g., >60 Hz)
 b, a = butter(4, 60 / (fsBionode / 2), btype='low')
 filtered = filtfilt(b, a, rawCha[channel]) # Clean EEG signal
 time = np.arange(len(filtered)) / fsBionode # Time vector in seconds
+
 
 # === Alpha Power Computation ===
 # Compute alpha-band power (8–12 Hz) using parallel pipeline
@@ -76,12 +89,15 @@ time_min, alpha_power = compute_alpha_power(eeg_alpha, fsBionode, 1)
 smoothed_power = smooth_alpha_power(alpha_power, fsBionode, 1)
 time_sec_alpha = time_min * 60 # Convert time vector to seconds
 
+
 # === Video frame queue ===
 queue_frame = Queue(maxsize=1)
+
 
 # === Launch video processing in separate thread ===
 def run_video():
     """Launches a video capture thread with gaze tracking (None).
+
 
     Captures video from a given path, processes each frame to detect gaze and blinking,
     and places annotated frames in a queue for visualization. Also syncs video time with EEG display.
@@ -101,21 +117,24 @@ def run_video():
         current_time = frame_count / fps
         video_frame_time[0] = current_time   # Global time sync point
         frame_count += 1
-        
+       
         gaze.refresh(frame)  # Run face/gaze detection
-        gaze.is_blinking(current_time) 
+        gaze.is_blinking(current_time)
         annotated = gaze.annotated_frame(current_time) # Annotate blinking
-        
+       
         # Update video frame queue for animation
         if queue_frame.empty():
             queue_frame.put(annotated)
-        cv2.waitKey(1) # Prevents GUI freeze 
+        cv2.waitKey(1) # Prevents GUI freeze
+
 
     cap.release()
     # gaze.export_to_csv() # Save tracking data to file
 
+
 video_thread = Thread(target=run_video, daemon=True)
 video_thread.start()
+
 
 # === Plotting ===
 fig = plt.figure(figsize=(16, 8))
@@ -124,9 +143,11 @@ ax_video = fig.add_subplot(gs[0, 0])
 ax_eeg = fig.add_subplot(gs[0, 1])
 ax_alpha = fig.add_subplot(gs[1, :])
 
+
 video_image = ax_video.imshow(np.zeros((480, 853, 3), dtype=np.uint8))
 ax_video.axis('off')
 ax_video.set_title("Video Feed (Gaze Tracked)")
+
 
 line, = ax_eeg.plot([], [], color='blue')
 event_dots, = ax_eeg.plot([], [], 'ro')
@@ -137,6 +158,7 @@ ax_eeg.set_title("Filtered EEG with Eye Movement Detection")
 ax_eeg.set_xlim(0, window_sec)
 ax_eeg.set_ylim(-0.00007, 0.00007)
 
+
 raw_line, = ax_alpha.plot([], [], label='Raw Alpha Power (V²)', color='green', alpha=0.9)
 smooth_line, = ax_alpha.plot([], [], label='Smoothed Alpha Power', color='red', linewidth=2)
 ax_alpha.set_xlabel('Time (s)')
@@ -146,16 +168,20 @@ ax_alpha.set_title('Animated Alpha Power (20s Window)')
 # ax_alpha.grid(True)
 ax_alpha.legend()
 
+
 text_labels = []
+
 
 # Detects rapid eye movement spikes in EEG window (list of tuples).
 def detect_eye_movements(y_win, t_win):
     """Detects rapid eye movement spikes in EEG window (list of tuples).
 
+
     y_win: np.ndarray
         EEG signal values in a moving window.
     t_win: np.ndarray
         Corresponding timestamps for y_win samples.
+
 
     Returns:
         events: list of tuples
@@ -181,10 +207,13 @@ def detect_eye_movements(y_win, t_win):
             i += 1
     return events
 
+
 def init():
     """Initializes empty plots for animation setup (list).
 
+
     Clears and resets all animation objects: EEG line, event dots, video image, alpha power lines.
+
 
     No parameters.
     Returns:
@@ -200,11 +229,14 @@ def init():
     ax_alpha.set_ylim(np.min(alpha_power), np.max(alpha_power))
     return [line, event_dots, video_image, raw_line, smooth_line]
 
+
 def update(_):
     """Animation update function that refreshes plots with current video and EEG data (list).
 
+
     _: int
         Frame index passed by matplotlib animation system (unused).
+
 
     Returns:
         list
@@ -214,7 +246,9 @@ def update(_):
     if paused[0]:
         return [line, event_dots, video_image, raw_line, smooth_line] + text_labels
 
+
     current_time = video_frame_time[0]
+
 
     # === EEG update ===
     eeg_mask = (time >= current_time) & (time <= current_time + window_sec)
@@ -226,6 +260,7 @@ def update(_):
         t_win_relative = t_win - t_win[0]
         line.set_data(t_win_relative, y_win)
         ax_eeg.set_title(f"Filtered EEG ({t_win[0]:.1f}s - {t_win[-1]:.1f}s)")
+
 
         # Detect and plot eye movement events
         events = detect_eye_movements(y_win, t_win)
@@ -244,6 +279,7 @@ def update(_):
             txt = ax_eeg.text(tx, ty + 0.00004, 'Eye Movement/EOG', color='red', fontsize=8)
             text_labels.append(txt)
 
+
     # === Alpha power update ===
     t_start = max(current_time - 20, 0)
     t_end = current_time
@@ -256,25 +292,32 @@ def update(_):
     except Exception as e:
         print(f"Alpha plot error at time {current_time:.2f}s: {e}")
 
+
     # === Video ===
     if not queue_frame.empty():
         frame = queue_frame.get()
         video_image.set_array(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+
 
     try:
         print(f"Video Time: {current_time:.2f}s | EEG Window: {t_win[0]:.2f}s | Alpha Power Window: {t_start:.2f}-{t_end:.2f}s")
     except Exception as e:
         print(f"[DEBUG] Print failed at {current_time:.2f}s: {e}")
 
+
     # print(f"Video Time: {current_time:.2f}s | EEG Window: {t_win[0]:.2f}s | Alpha Power Window: {t_start:.2f}-{t_end:.2f}s")
 
+
     return [line, event_dots, video_image, raw_line, smooth_line] + text_labels
+
 
 def on_key(event):
     """Handles keypress events to pause/resume the animation (None).
 
+
     event: matplotlib.backend_bases.KeyEvent
         The keyboard event triggered by user input.
+
 
     Returns:
         None
@@ -283,7 +326,9 @@ def on_key(event):
         paused[0] = not paused[0]
         print("Paused" if paused[0] else "Resumed")
 
+
 fig.canvas.mpl_connect('key_press_event', on_key)
+
 
 ani = animation.FuncAnimation(
     fig,
@@ -294,11 +339,15 @@ ani = animation.FuncAnimation(
     cache_frame_data=False
 )
 
+
 plt.tight_layout()
 plt.show()
 
 
+
+
 # eeg_gaze_alpha_plot.py
+
 
 # import numpy as np
 # import matplotlib.pyplot as plt
@@ -320,6 +369,9 @@ plt.show()
 
 
 
+
+
+
 # # === CONFIG ===
 # # File paths and parameters for EEG and video processing
 # # filename = blockPath = r"\Users\maryz\EEG-Video\bin_files\ear3.31.25_1.bin"
@@ -332,17 +384,22 @@ plt.show()
 # # video_path = "video_recordings/alessandro_edit.mp4"  # Video file path
 # video_path = "video_recordings/4.53_tdt_e.mp4"
 
+
 # # === Pause flag ===
 # # Using lists to allow modification across threads
 # paused = [False]  # Global pause state
 # video_frame_time = [0.0]  # Current video time (acts as timeline anchor)
 
+
 # # === Load and preprocess EEG ===
 # # Load raw EEG data from binary file
 # # data = fn_BionodeBinOpen(filename, ADCres, fsBionode)
 
+
 # data = read_block(BLOCK_PATH)
 # raw = data.streams.EEGw.data
+
+
 
 
 # # Convert to float32 and scale to volts
@@ -351,6 +408,7 @@ plt.show()
 # scale_factor = 1.8 / 4096.0
 # rawCha = (rawCha - 2048) * scale_factor
 # rawCha = np.nan_to_num(rawCha)
+
 
 # # Apply low-pass filter to remove high-frequency noise
 # highCutoff = 60  # Cutoff frequency in Hz
@@ -361,11 +419,14 @@ plt.show()
 # print(f"[DEBUG] Filtered EEG first 5 values: {filtered[:5]}")
 
 
+
+
 # # === Alpha Power Computation ===
 # # Note: This appears to be redundant with the above EEG loading - uses same file but processes differently
 # # raw_channel_data = load_and_preprocess_data(blockPath, ADCres, fsBionode, channel)
 # # duration_sec = print_data_stats(len(raw_channel_data), fsBionode)
 # duration_sec = print_data_stats(len(rawCha), fsBionode)  # Print stats for loaded data
+
 
 # # eeg_alpha = bandpass_filter_alpha(raw_channel_data, fsBionode)  # Get alpha band (8-13Hz)
 # eeg_alpha = bandpass_filter_alpha(rawCha[channel], fsBionode)  # Get alpha band (8-13Hz)
@@ -374,18 +435,24 @@ plt.show()
 # print(f"[DEBUG] eeg_alpha mean: {np.mean(eeg_alpha):.4e}, std: {np.std(eeg_alpha):.4e}")
 
 
+
+
 # time_min, alpha_power = compute_alpha_power(eeg_alpha, fsBionode, 1)  # Compute power
 # smoothed_power = smooth_alpha_power(alpha_power, fsBionode, 1)  # Smooth the power #TODO: PROBLEM HERE
 # time_sec_alpha = time_min * 60  # Convert minutes to seconds
+
 
 # print(f"[DEBUG] Alpha power shape: {alpha_power.shape}, Time_sec_alpha shape: {time_sec_alpha.shape}")
 # print(f"[DEBUG] First 5 Alpha power values: {alpha_power[:5]}")
 # print(f"[DEBUG] First 5 Alpha power times: {time_sec_alpha[:5]}")
 
 
+
+
 # # === Video frame queue ===
 # # Thread-safe queue for passing video frames between threads
 # queue_frame = Queue(maxsize=1)  # Only holds latest frame
+
 
 # # === Launch video processing in separate thread ===
 # def run_video():
@@ -394,41 +461,44 @@ plt.show()
 #     gaze = MediaPipeGazeTracking()  # Gaze tracking object
 #     fps = cap.get(cv2.CAP_PROP_FPS)  # Get video FPS
 #     frame_count = 0
-    
+   
 #     while cap.isOpened():
 #         if paused[0]:  # Check pause state
 #             cv2.waitKey(1)
 #             continue
-            
+           
 #         ret, frame = cap.read()
 #         if not ret:
 #             break
-            
+           
 #         frame = cv2.resize(frame, (960, 540))  # Resize for display
 #         current_time = frame_count / fps  # Calculate current video time
 #         video_frame_time[0] = current_time  # Update global time reference
 #         frame_count += 1
-        
+       
 #         # Process gaze tracking
 #         gaze.refresh(frame)
 #         gaze.is_blinking(current_time)
 #         annotated = gaze.annotated_frame(current_time)  # Get frame with gaze annotations
-        
+       
 #         if queue_frame.empty():  # Only update if queue is empty
 #             queue_frame.put(annotated)
-            
+           
 #         cv2.waitKey(1)  # Small delay
-        
+       
 #     cap.release()
 #     gaze.export_to_csv()  # Save gaze data
+
 
 # # Start video processing thread (daemon=True means it will exit when main exits)
 # video_thread = Thread(target=run_video, daemon=True)
 # video_thread.start()
 
+
 # # === Plotting ===
 # fig = plt.figure(figsize=(12, 6))
 # gs = fig.add_gridspec(3, 2)  # 2 rows, 2 columns
+
 
 # # Video subplot (top-left)
 # ax_video = fig.add_subplot(gs[0, 0])
@@ -436,6 +506,7 @@ plt.show()
 # video_image = ax_video.imshow(np.zeros((540, 960, 3), dtype=np.uint8))  # Blank image
 # ax_video.axis('off')
 # ax_video.set_title("Video Feed (Gaze Tracked)")
+
 
 # # EEG subplot (top-right)
 # ax_eeg = fig.add_subplot(gs[0, 1])
@@ -447,6 +518,8 @@ plt.show()
 # # ax_eeg.grid(True)
 # ax_eeg.set_xlim(0, window_sec)
 # ax_eeg.set_ylim(-0.00007, 0.00007)  # Fixed y-axis for better visualization
+
+
 
 
 # # Alpha power subplot (bottom full width)
@@ -465,6 +538,8 @@ plt.show()
 # ax_alpha.legend()
 
 
+
+
 # # Face zoom subplot (bottom-left corner)
 # ax_face = fig.add_subplot(gs[1, 0])  # Place in bottom-left quadrant
 # ax_face.set_aspect('auto')  # or 'equal' or 'box'
@@ -473,15 +548,18 @@ plt.show()
 # ax_face.set_title("Zoomed-In Face")
 
 
+
+
 # text_labels = []  # Stores text annotations for eye movement events
+
 
 # def detect_eye_movements(y_win, t_win):
 #     """Detects eye movements in EEG signal using threshold-based approach
-    
+   
 #     Args:
 #         y_win: EEG signal window (voltage values)
 #         t_win: Corresponding time values
-        
+       
 #     Returns:
 #         List of (time, voltage) tuples for detected events
 #     """
@@ -491,7 +569,7 @@ plt.show()
 #     max_gap_samples = int(max_gap_sec * fsBionode)
 #     events = []
 #     i = 0
-    
+   
 #     # Scan through signal looking for spike-dip patterns
 #     while i < len(y_win) - max_gap_samples:
 #         if y_win[i] > threshold_spike:
@@ -509,6 +587,7 @@ plt.show()
 #             i += 1
 #     return events
 
+
 # def init():
 #     """Initialize animation with empty plots"""
 #     line.set_data([], [])
@@ -525,13 +604,17 @@ plt.show()
 #     return [line, event_dots, video_image, raw_line, smooth_line, face_image]
 
 
+
+
 # def update(_):
 #     """Update function called for each animation frame"""
 #     global text_labels
 #     if paused[0]:
 #         return [line, event_dots, video_image, raw_line, smooth_line] + text_labels
 
+
 #     current_time = video_frame_time[0]  # Get current video time (shared timeline)
+
 
 #     # === EEG update ===
 #     eeg_mask = (time >= current_time) & (time <= current_time + window_sec)
@@ -539,12 +622,14 @@ plt.show()
 #     if np.sum(eeg_mask) == 0:
 #         print("[WARN] No EEG data selected for current time window.")
 
+
 #     if np.any(eeg_mask):
 #         t_win = time[eeg_mask]
 #         y_win = filtered[eeg_mask]
 #         t_win_relative = t_win - t_win[0]  # Make time relative to window start
 #         line.set_data(t_win_relative, y_win)
 #         ax_eeg.set_title(f"Filtered EEG ({t_win[0]:.1f}s - {t_win[-1]:.1f}s)")
+
 
 #         # Detect eye movements and plot them
 #         events = detect_eye_movements(y_win, t_win)
@@ -555,17 +640,18 @@ plt.show()
 #             event_dots.set_data(t_events, y_events)
 #         else:
 #             event_dots.set_data([], [])
-            
+           
 #         # Clear previous text labels
 #         for txt in text_labels:
 #             if txt in ax_eeg.texts:
 #                 txt.remove()
 #         text_labels = []
-        
+       
 #         # Add new labels for detected events
 #         for tx, ty in zip(t_events, y_events):
 #             txt = ax_eeg.text(tx, ty + 0.00004, 'Eye Movement/EOG', color='red', fontsize=8)
 #             text_labels.append(txt)
+
 
 #     # === Alpha power update ===
 #     t_start = max(current_time - window_sec, 0)
@@ -577,6 +663,7 @@ plt.show()
 #             print("[WARN] No alpha power data in this time window.")
 #         else:
 #             print(f"[DEBUG] Alpha values (raw): {alpha_power[alpha_mask][:5]}")
+
 
 #         if np.any(alpha_mask):
 #             raw_line.set_data(time_sec_alpha[alpha_mask] - current_time, alpha_power[alpha_mask])
@@ -590,6 +677,7 @@ plt.show()
 #     except Exception as e:
 #         print(f"Alpha plot error at time {current_time:.2f}s: {e}")
 
+
 #     # === Video ===
 #     if not queue_frame.empty():
 #         frame = queue_frame.get()
@@ -599,15 +687,19 @@ plt.show()
 #         face_crop = frame[y1:y2, x1:x2]
 #         face_image.set_array(cv2.cvtColor(face_crop, cv2.COLOR_BGR2RGB))
 
+
 #         #528, 324
 #         #640, 324
 #         #640, 350
 #         #528, 350
-    
+   
+
 
 #     print(f"Video Time: {current_time:.2f}s | EEG Window: {t_win[0]:.2f}s | Alpha Power Window: {t_start:.2f}-{t_end:.2f}s")
 
+
 #     return [line, event_dots, video_image, raw_line, smooth_line, face_image] + text_labels
+
 
 # def on_key(event):
 #     """Keyboard callback for pause/resume"""
@@ -615,7 +707,9 @@ plt.show()
 #         paused[0] = not paused[0]
 #         print("Paused" if paused[0] else "Resumed")
 
+
 # fig.canvas.mpl_connect('key_press_event', on_key)
+
 
 # # Create animation
 # ani = animation.FuncAnimation(
@@ -627,5 +721,7 @@ plt.show()
 #     cache_frame_data=False  # Don't cache frames (important for real-time)
 # )
 
+
 # plt.tight_layout()
 # plt.show()
+

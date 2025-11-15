@@ -4,7 +4,7 @@ import time  # For debugging execution time
 import pandas as pd
 import matplotlib.pyplot as plt
 import os
-from bionodebinopen import fn_BionodeBinOpen 
+from active.bionodebinopen import fn_BionodeBinOpen 
 
 
 

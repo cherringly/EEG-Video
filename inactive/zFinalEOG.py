@@ -6,8 +6,8 @@ from scipy.signal import butter, filtfilt
 import cv2
 from threading import Thread
 from queue import Queue, Full
-from gaze_track import MediaPipeGazeTracking
-from bionodebinopen import fn_BionodeBinOpen
+from active.gaze_track import MediaPipeGazeTracking
+from active.bionodebinopen import fn_BionodeBinOpen
 import mediapipe as mp
 
 # === CONFIG ===

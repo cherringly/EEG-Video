@@ -1,15 +1,18 @@
 """
 Bionode Bin Open Helper Module
 
-Parses raw .bin files recorded by the Bionode system and unpacks interleaved 12-bit ADC data 
-into channel-wise arrays with time vectors. Used by EEG processing scripts such as 
+
+Parses raw .bin files recorded by the Bionode system and unpacks interleaved 12-bit ADC data
+into channel-wise arrays with time vectors. Used by EEG processing scripts such as
 `parallel.py` and `integrated_new.py`.
+
 
 Key functionality:
 - Reads and parses binary header and data packets from .bin files
 - Unpacks compressed 12-bit ADC data into usable 16-bit numpy arrays
 - Generates a time vector synchronized with the sample rate
 - Optionally previews loaded data via matplotlib (when run directly)
+
 
 Dependencies:
 - numpy
@@ -18,19 +21,24 @@ Dependencies:
 """
 
 
+
+
 from datetime import datetime
 import numpy as np
 import matplotlib.pyplot as plt
+
 
 def fn_BionodeBinOpen(packedFileDir: str, ADCres: int, sampR: int) -> dict:
     """
     Open a Bionode-generated .bin file, parse header and unpack 12-bit ADC samples
     into a channels×time array.
 
+
     Args:
         packedFileDir: path to the .bin file
         ADCres: ADC resolution in bits (e.g. 24)
         sampR: sampling rate (Hz) for the time vector
+
 
     Returns:
         dict with keys:
@@ -47,11 +55,13 @@ def fn_BionodeBinOpen(packedFileDir: str, ADCres: int, sampR: int) -> dict:
     except IOError as e:
         raise IOError(f"Could not open file {packedFileDir}: {e}")
 
+
     raw_data   = np.frombuffer(raw_bytes, dtype=np.uint8)
     packet_len = 58
     packet_num = len(raw_data) // packet_len
     if packet_num < 2:
         raise ValueError("File contains no data packets.")
+
 
     # --- Parse header packet (first 58 bytes) ---
     hdr = raw_data[:packet_len]
@@ -65,15 +75,19 @@ def fn_BionodeBinOpen(packedFileDir: str, ADCres: int, sampR: int) -> dict:
     numChannels = int(hdr[9])
     file_date   = datetime(year, month, day, hour, minute, second)
 
+
     # Determine how many 12-bit samples per channel per packet
     n_samps_per_pkt = 24 // numChannels
     n_data_pkts     = packet_num - 1
     total_samps     = n_data_pkts * n_samps_per_pkt
 
+
     # Preallocate channels × time array
     channelsData = np.zeros((numChannels, total_samps), dtype=np.uint16)
 
+
     print("Unpacking Data from file...")
+
 
     # Loop over data packets
     for i in range(1, packet_num):
@@ -81,9 +95,11 @@ def fn_BionodeBinOpen(packedFileDir: str, ADCres: int, sampR: int) -> dict:
         end   = start + packet_len
         pkt   = raw_data[start:end]
 
+
         # Extract the 3-byte groups: bytes 8 through (58-15)  → indices [7:43]
         x = pkt[7:packet_len-15]
         x = x.reshape(-1, 3)
+
 
         # Combine into 24-bit words
         y = (
@@ -92,26 +108,33 @@ def fn_BionodeBinOpen(packedFileDir: str, ADCres: int, sampR: int) -> dict:
              x[:, 2].astype(np.uint32)
         )
 
+
         # Split each into two 12-bit samples
         high = (y & 0xFFF000) >> 12
         low  =  y & 0x000FFF
         interleaved = np.column_stack((high, low)).ravel(order='F')
 
+
         # Reshape into (channels × samples_per_chunk)
         pkt_data = interleaved.reshape((numChannels, n_samps_per_pkt), order='F')
+
 
         idx0 = (i-1) * n_samps_per_pkt
         idx1 = idx0 + n_samps_per_pkt
         channelsData[:, idx0:idx1] = pkt_data
 
+
         # Progress update every ~5%
         if i % max(1, round(packet_num * 0.05)) == 0:
             print(f"Progress: {i/packet_num*100:.0f}%")
 
+
     print("Unpacking Completed!")
+
 
     # Build the time vector
     time = np.arange(total_samps) / sampR
+
 
     return {
         'Date':         file_date,
@@ -122,20 +145,25 @@ def fn_BionodeBinOpen(packedFileDir: str, ADCres: int, sampR: int) -> dict:
     }
 
 
+
+
 def main():
     # Input parameters
     packedFileDir = "ear3.31.25_1.bin"
     ADCres        = 24       # ADC resolution (bits)
     sampR         = 1000     # Sampling rate in Hz
 
+
     # Load and unpack data
     unpacked = fn_BionodeBinOpen(packedFileDir, ADCres, sampR)
+
 
     print("\n--- File Info ---")
     print("Date:       ", unpacked["Date"])
     print("SampleRate: ", unpacked["sampleRate"])
     print("NumChannels:", unpacked["numChannels"])
     print("Shape:      ", unpacked["channelsData"].shape)
+
 
     # Quick preview of channel 0
     plt.plot(unpacked["time"], unpacked["channelsData"][0])
@@ -145,5 +173,10 @@ def main():
     plt.show()
 
 
+
+
 if __name__ == "__main__":
     main()
+
+
+

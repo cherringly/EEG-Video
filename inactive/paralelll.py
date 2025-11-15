@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 from scipy import signal
 from scipy.integrate import simpson as simps
 import pandas as pd
-from bionodebinopen import fn_BionodeBinOpen
+from active.bionodebinopen import fn_BionodeBinOpen
 
 def load_and_preprocess_data(block_path, adc_resolution, fs, channel):
     data_dict = fn_BionodeBinOpen(block_path, adc_resolution, fs)

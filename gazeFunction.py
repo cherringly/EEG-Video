@@ -3,7 +3,7 @@ import numpy as np
 import cv2
 from queue import Full
 import mediapipe as mp
-from gaze_track import MediaPipeGazeTracking
+from active.gaze_track import MediaPipeGazeTracking
 from dataFunction import sync_to_wall_clock
 
 def gazeTrack(video_path, eeg_queue, paused, saccade_times, prev_direction, t0_real, eye_box_size=100):

@@ -1,7 +1,7 @@
 
 import numpy as np
 from scipy.signal import butter, filtfilt
-from bionodebinopen import fn_BionodeBinOpen
+from active.bionodebinopen import fn_BionodeBinOpen
 import time
 
 def load_and_filter(filename, ADCres=12, sampR=5537, filter_config=None):

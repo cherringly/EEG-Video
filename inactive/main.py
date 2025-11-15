@@ -28,7 +28,7 @@ import cv2
 import mediapipe as mp
 import matplotlib.pyplot as plt
 import os
-from bionodebinopen import fn_BionodeBinOpen
+from active.bionodebinopen import fn_BionodeBinOpen
 
 
 class CombinedAnalysis:

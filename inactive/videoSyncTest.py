@@ -2,11 +2,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from scipy.signal import butter, filtfilt
-from bionodebinopen import fn_BionodeBinOpen
+from active.bionodebinopen import fn_BionodeBinOpen
 import cv2
 from threading import Thread
 from queue import Queue
-from gaze_track import MediaPipeGazeTracking
+from active.gaze_track import MediaPipeGazeTracking
 
 # === CONFIG ===
 filename = blockPath = r"\Users\maryz\EEG-Video\bin_files\ear3.31.25_1.bin"  # File path

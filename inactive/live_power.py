@@ -4,7 +4,7 @@ import numpy as np
 import scipy.signal as signal
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
-from bionodebinopen import fn_BionodeBinOpen
+from active.bionodebinopen import fn_BionodeBinOpen
 import time
 
 # Config

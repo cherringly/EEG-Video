@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from scipy.signal import butter, filtfilt, find_peaks
 import os
 import pandas as pd
-from bionodebinopen import fn_BionodeBinOpen
+from active.bionodebinopen import fn_BionodeBinOpen
 
 expDay = '25-31-03'  # folder or name of the experiment
 fileN = 7  # File to inspect in the folder

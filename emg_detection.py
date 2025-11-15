@@ -8,7 +8,7 @@ import matplotlib.animation as animation
 from scipy.signal import butter, filtfilt, sosfiltfilt
 from threading import Thread
 from queue import Queue, Full
-from bionodebinopen import fn_BionodeBinOpen
+from active.bionodebinopen import fn_BionodeBinOpen
 from movement_track import HeadJawTracker
 
 # === CONFIGURATION AND CONSTANTS ===

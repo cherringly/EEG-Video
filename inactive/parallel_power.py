@@ -3,12 +3,12 @@ import scipy.signal as signal
 from scipy.integrate import simpson as simps
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
-from bionodebinopen import fn_BionodeBinOpen
+from active.bionodebinopen import fn_BionodeBinOpen
 import cv2
 from threading import Thread
 from queue import Queue
 from collections import deque
-from gaze_track import MediaPipeGazeTracking
+from active.gaze_track import MediaPipeGazeTracking
 
 # EEG CONFIG
 channel = 0 #channel number (change to 1 for matlab)

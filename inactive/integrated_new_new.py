@@ -7,9 +7,9 @@ import cv2
 from threading import Thread
 from queue import Queue, Full
 from gaze_track_archis import MediaPipeGazeTracking
-from bionodebinopen import fn_BionodeBinOpen
+from active.bionodebinopen import fn_BionodeBinOpen
 import mediapipe as mp
-from paralelll import bandpass_filter_alpha, compute_alpha_power, smooth_alpha_power
+from inactive.paralelll import bandpass_filter_alpha, compute_alpha_power, smooth_alpha_power
 from emg_movement_detector import extract_movement_windows, detect_emg_during_movement, export_movement_csv
 
 # === CONFIG ===

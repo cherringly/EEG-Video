@@ -120,7 +120,7 @@ import csv
 import cv2
 import mediapipe as mp
 from scipy import signal
-from bionodebinopen import fn_BionodeBinOpen
+from active.bionodebinopen import fn_BionodeBinOpen
 from movement_track import HeadJawTracker
 
 
